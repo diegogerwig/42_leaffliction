@@ -1,0 +1,19 @@
+# 📊 Data Analysis & Processing
+numpy==1.26.4             # Computación numérica y arrays multidimensionales
+pandas==2.2.3             # Manipulación y análisis de datos (DataFrames)
+scipy==1.12.0             # Algoritmos científicos y funciones matemáticas
+
+# 📈 Data Visualization
+matplotlib==3.9.4         # Visualización y gráficos 2D
+seaborn==0.13.2           # Visualización estadística avanzada
+
+# 🤖 Machine Learning
+scikit-learn==1.4.0       # Algoritmos y herramientas de machine learning
+imbalanced-learn==0.12.0  # Manejo de datasets con clases desbalanceadas
+joblib==1.3.2             # Paralelización y persistencia (caching) para ML
+
+# 🛠️ Herramientas de Desarrollo
+jupyter==1.0.0            # Notebooks interactivos para desarrollo y visualización
+
+# 📦 Otros
+flake8==7.0.0             # Herramienta de análisis estático de código
