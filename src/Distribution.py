@@ -5,21 +5,14 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
-
-# Color definitions
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-RESET = '\033[0m'
-
-
-def print_colored(text, color):
-    """Print text with color"""
-    print(f"{color}{text}{RESET}")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.utils import (
+    print_colored,
+    GREEN, BLUE, RED, YELLOW, CYAN, NC
+)
 
 
 def print_directory_structure(path, indent="", is_last=True):
-    """Print directory structure recursively"""
     basename = os.path.basename(path)
 
     # Symbol to display in the tree
@@ -46,11 +39,6 @@ def print_directory_structure(path, indent="", is_last=True):
 
 
 def count_files(path):
-    """
-    Count files in subdirectories only (exclude root directory)
-    Returns a dictionary with directory name as key and
-    number of files as value
-    """
     data = {}
 
     for root, dirs, files in os.walk(path):
@@ -75,7 +63,6 @@ def count_files(path):
 
 
 def plot_bar(data, path, plots_dir):
-    """Generate a bar chart with file distribution (improved version)"""
     if not data:
         print_colored("No files found in subdirectories to plot.", YELLOW)
         return False
@@ -133,7 +120,6 @@ def plot_bar(data, path, plots_dir):
 
 
 def plot_pie(data, path, plots_dir):
-    """Generate a pie chart with file distribution (improved version)"""
     if not data:
         print_colored("No files found in subdirectories to plot.", YELLOW)
         return False
@@ -190,7 +176,6 @@ def plot_pie(data, path, plots_dir):
 
 
 def parse_arguments():
-    """Parse command line arguments"""
     parser = argparse.ArgumentParser(
         description='Analyze file distribution in subdirectories'
     )
@@ -210,15 +195,14 @@ def parse_arguments():
     parser.add_argument(
         '-o', '--output',
         type=str,
-        default=os.path.join(project_dir, "plot"),
-        help=f'Output directory for plots (default: {os.path.join(project_dir, "plot")})'
+        default=os.path.join(project_dir, "plots"),
+        help=f'Output directory for plots (default: {os.path.join(project_dir, "plots")})'
     )
     
     return parser.parse_args()
 
 
 def main():
-    # Parse command line arguments
     args = parse_arguments()
     
     target_dir = os.path.abspath(args.directory)

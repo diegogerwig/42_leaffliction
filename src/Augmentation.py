@@ -8,10 +8,11 @@ import argparse
 import matplotlib.pyplot as plt
 from pyfiglet import Figlet
 
-# Colors for terminal output
-GREEN = '\033[92m'
-RED = '\033[91m'
-RESET = '\033[0m'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.utils import (
+    print_colored,
+    GREEN, BLUE, RED, YELLOW, CYAN, NC
+)
 
 
 def parse_argument():
@@ -44,7 +45,7 @@ def parse_argument():
     ext = os.path.splitext(args.image)[1].lower()
     
     if ext not in valid_extensions:
-        print(f"{RED}Warning:{RESET} File {args.image} does not have a standard image extension.")
+        print(f"{RED}Warning:{NC} File {args.image} does not have a standard image extension.")
     
     # If output is not specified, use default ./images_augmented
     if args.output is None:
@@ -52,7 +53,7 @@ def parse_argument():
     
     # Create the output directory if it doesn't exist
     os.makedirs(args.output, exist_ok=True)
-    print(f"{GREEN}Output directory:{RESET} {args.output}")
+    print(f"{GREEN}Output directory:{NC} {args.output}")
     
     return args
 
@@ -70,10 +71,13 @@ def flip_image(image, flip_code=1):
 
 def rotate_image(image, angle=None):
     """
-    Rotate an image by a random angle
+    Rotate an image by a random angle between 15 and 45 degrees (positive or negative)
     """
     if angle is None:
-        angle = random.randint(-45, 45)
+        # Generar un número aleatorio entre 15 y 45, luego multiplicar por un signo aleatorio
+        magnitude = random.randint(15, 45)
+        sign = random.choice([-1, 1])
+        angle = magnitude * sign
         
     height, width = image.shape[:2]
     center = (width // 2, height // 2)
@@ -83,17 +87,28 @@ def rotate_image(image, angle=None):
     
     # Apply rotation
     return cv2.warpAffine(image, rotation_matrix, (width, height),
-                         flags=cv2.INTER_LINEAR,
+                         flags=cv2.INTER_LINEAR, 
                          borderMode=cv2.BORDER_CONSTANT,
                          borderValue=(255, 255, 255))
 
 
-def distort_image(image, alpha=None):
+def distort_image(image, alpha=None, blur_strength=None, brightness_factor=None):
     """
-    Apply elastic distortion to an image
+    Apply elastic distortion to an image with blur and brightness adjustment
     """
+    
+    # Apply elastic distortion
     if alpha is None:
         alpha = random.randint(25, 50)
+        
+    # Set random blur strength if not provided
+    if blur_strength is None:
+        blur_strength = random.randint(1, 3)  # Valores entre 1 y 3 para un efecto visible
+    
+    # Set random brightness factor if not provided
+    if brightness_factor is None:
+        # Valores entre 0.7 y 1.3 para oscurecer o aclarar la imagen
+        brightness_factor = random.uniform(0.7, 1.3)
         
     height, width = image.shape[:2]
     
@@ -112,11 +127,23 @@ def distort_image(image, alpha=None):
     map_x = (x + dx).astype(np.float32)
     map_y = (y + dy).astype(np.float32)
     
-    # Remap and return distorted image
-    return cv2.remap(image, map_x, map_y, 
-                    interpolation=cv2.INTER_LINEAR,
-                    borderMode=cv2.BORDER_CONSTANT,
-                    borderValue=(255, 255, 255))
+    # Remap image
+    distorted = cv2.remap(image, map_x, map_y,
+                         interpolation=cv2.INTER_LINEAR,
+                         borderMode=cv2.BORDER_CONSTANT,
+                         borderValue=(255, 255, 255))
+    
+    # Apply blur if requested
+    if blur_strength > 0:
+        # Make sure blur_strength is odd
+        blur_kernel = 2 * blur_strength + 1 if blur_strength > 0 else 1
+        distorted = cv2.GaussianBlur(distorted, (blur_kernel, blur_kernel), 0)
+    
+    # Apply brightness adjustment if requested
+    if brightness_factor != 1.0:
+        distorted = cv2.convertScaleAbs(distorted, alpha=brightness_factor, beta=0)
+    
+    return distorted
 
 
 def skew_image(image, intensity=None):
@@ -230,7 +257,7 @@ def save_images(images, filename, output_dir):
     img_output_dir = os.path.join(output_dir, name)
     os.makedirs(img_output_dir, exist_ok=True)
     
-    print(f"{GREEN}Saving augmented images to: {img_output_dir}{RESET}")
+    print(f"{GREEN}Saving augmented images to: {img_output_dir}{NC}")
     
     # Skip the original image when saving (we don't need to save it again)
     for label, image in images.items():
@@ -246,6 +273,9 @@ def save_images(images, filename, output_dir):
 
 
 def plot_images(images, filename):
+    """
+    Plot original and augmented images in a 3x3 grid and save to ./plots directory
+    """
     # Convert BGR to RGB for display with matplotlib
     rgb_images = {label: cv2.cvtColor(img, cv2.COLOR_BGR2RGB) 
                  for label, img in images.items()}
@@ -291,8 +321,22 @@ def plot_images(images, filename):
     plt.suptitle(f'Augmentation: {os.path.basename(filename)}', fontsize=16)
     plt.tight_layout()
     
+    # Create plots directory if it doesn't exist
+    plots_dir = os.path.abspath("./plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Generate a filename for the saved plot
+    base_name = os.path.splitext(os.path.basename(filename))[0]
+    plot_filename = os.path.join(plots_dir, f"augmentation_{base_name}.png")
+    
+    # Save the figure
+    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+    print(f"✅ Plot saved to: {plot_filename}")
+    
     # Show the plot
     plt.show()
+    
+    return plot_filename
 
 
 def main():
@@ -305,7 +349,7 @@ def main():
     image = read_image(filename)
     
     if image is None:
-        print(f"{RED}Error:{RESET} Could not read image {filename}")
+        print(f"{RED}Error:{NC} Could not read image {filename}")
         sys.exit(1)
 
     # Dictionary with the label of the image as key and the augmented image as value
@@ -330,5 +374,5 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        print(f"{RED}Error:{RESET} {error}")
+        print(f"{RED}Error:{NC} {error}")
         sys.exit(1)

@@ -7,391 +7,18 @@ import threading
 import shutil
 from pathlib import Path
 
-
-def clear_screen():
-    os.system('clear')
-
-
-# Colors for better output
-GREEN = '\033[0;32m'
-BLUE = '\033[0;34m'
-RED = '\033[0;31m'
-YELLOW = '\033[0;33m'
-CYAN = '\033[0;36m'
-NC = '\033[0m'  # No Color
-
-# Spinner animation characters
-SPINNER_CHARS = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-
-def print_colored(text, color):
-    print(f"{color}{text}{NC}")
-
-
-def get_config():
-    """Get configuration for virtual environment"""
-    home = os.environ.get('HOME', os.path.expanduser('~'))
-    
-    if os.path.exists(f"{home}/sgoinfre"):
-        conda_path = f"{home}/sgoinfre/miniforge"
-        return {
-            'conda_path': conda_path,
-            'conda_bin': f"{conda_path}/bin/conda",
-            'env_name': "leaf_env",
-            'env_path': f"{conda_path}/envs/leaf_env",
-            'use_conda': True
-        }
-    else:
-        venv_path = os.path.join(home, "leaf_env")
-        return {
-            'venv_path': venv_path,
-            'env_name': "leaf_env",
-            'python_bin': os.path.join(venv_path, 'bin', 'python'),
-            'pip_bin': os.path.join(venv_path, 'bin', 'pip'),
-            'use_conda': False
-        }
-
-
-def run_command(command, shell=False, capture_output=False):
-    try:
-        if shell:
-            if capture_output:
-                return subprocess.run(
-                    command, shell=True, check=True, capture_output=True, text=True
-                )
-            return subprocess.run(command, shell=True, check=True)
-        else:
-            if capture_output:
-                return subprocess.run(
-                    command.split(), check=True, capture_output=True, text=True
-                )
-            return subprocess.run(command.split(), check=True)
-    except subprocess.CalledProcessError as e:
-        print_colored(f"❌ Error executing: {command}", RED)
-        if capture_output and e.stderr:
-            print_colored(f"Error details: {e.stderr}", RED)
-        return False
-
-
-def create_venv(config):
-    print_colored('\n🔆 Creating new virtual environment', BLUE)
-    
-    if config['use_conda']:
-        conda_cmd = f"{config['conda_bin']} create -y -n {config['env_name']} python=3.11"
-        return run_command(conda_cmd, shell=True)
-    else:
-        if not run_command("python3 -m venv --help", shell=True, capture_output=True):
-            print_colored("❌ Python venv module not available. Please install it first:", RED)
-            print_colored("    sudo apt-get install python3-venv  # For Debian/Ubuntu", YELLOW)
-            print_colored("    brew install python3  # For macOS with Homebrew", YELLOW)
-            print_colored(
-                "    python -m pip install virtualenv  # Alternative approach", 
-                YELLOW
-            )
-            return False
-            
-        os.makedirs(os.path.dirname(config['venv_path']), exist_ok=True)
-        result = run_command(f"python3 -m venv {config['venv_path']}", shell=True)
-        
-        if result:
-            print_colored(f"✅ Created virtual environment at {config['venv_path']}", GREEN)
-        
-        return result
-
-
-def venv_exists(config):
-    """Check if the virtual environment already exists"""
-    if config['use_conda']:
-        env_check = run_command("conda info --envs", shell=True, capture_output=True)
-        return env_check and config['env_name'] in env_check.stdout
-    else:
-        return os.path.exists(config['python_bin'])
-
-
-def activate_venv(config):
-    print_colored('\n🐍 Activating virtual environment', BLUE)
-    
-    if config['use_conda']:
-        activate_cmd = (
-            f". {config['conda_path']}/etc/profile.d/conda.sh && "
-            f"conda activate {config['env_name']}"
-        )
-        run_command(activate_cmd, shell=True)
-        
-        env_check = run_command("conda info --envs", shell=True, capture_output=True)
-        if env_check and config['env_name'] in env_check.stdout:
-            print_colored(f"✅ Activated conda environment: {config['env_name']}", GREEN)
-            return True
-        else:
-            print_colored("❌ Failed to activate conda environment", RED)
-            return False
-    else:
-        if os.path.exists(config['python_bin']):
-            print_colored(f"✅ Virtual environment found at: {config['venv_path']}", GREEN)
-            return True
-        else:
-            print_colored(f"❌ Virtual environment not found at {config['venv_path']}", RED)
-            return False
-
-
-def install_dependencies(config):
-    print_colored('\n🔗 Installing dependencies', BLUE)
-    
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(script_dir)
-    requirements_file = os.path.join(project_dir, "requirements.txt")
-    
-    # Check if requirements.txt exists, otherwise show a warning
-    if not os.path.exists(requirements_file):
-        print_colored("⚠️ requirements.txt not found! Dependencies may not be installed correctly.", YELLOW)
-        return False
-    
-    if config['use_conda']:
-        pip_command = (
-            f"{config['env_path']}/bin/pip install -r {requirements_file}"
-        )
-    else:
-        pip_command = f"{config['pip_bin']} install -r {requirements_file}"
-    
-    result = run_command(pip_command, shell=True)
-    if result:
-        print_colored("✅ Dependencies installed successfully", GREEN)
-    else:
-        print_colored("⚠️ Some dependencies might not have installed correctly", YELLOW)
-    
-    return True
-
-
-def clean_directories(project_dir):
-    """Clean the plot and images_augmented directories while preserving .gitkeep files"""
-    print_colored('\n🧹 Cleaning output directories', BLUE)
-    
-    dirs_to_clean = [
-        os.path.join(project_dir, "plot"),
-        os.path.join(project_dir, "images_augmented")
-    ]
-    
-    for dir_path in dirs_to_clean:
-        if not os.path.exists(dir_path):
-            os.makedirs(dir_path, exist_ok=True)
-            print_colored(f"✅ Created directory: {dir_path}", GREEN)
-            # Create .gitkeep file
-            gitkeep_path = os.path.join(dir_path, ".gitkeep")
-            with open(gitkeep_path, 'w') as f:
-                pass
-            continue
-            
-        cleaned = 0
-        for item in os.listdir(dir_path):
-            item_path = os.path.join(dir_path, item)
-            # Skip .gitkeep files
-            if item == ".gitkeep":
-                continue
-                
-            try:
-                if os.path.isfile(item_path):
-                    os.unlink(item_path)
-                    cleaned += 1
-                elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-                    cleaned += 1
-            except Exception as e:
-                print_colored(f"⚠️ Failed to remove {item_path}: {e}", YELLOW)
-        
-        # Create .gitkeep if it doesn't exist
-        gitkeep_path = os.path.join(dir_path, ".gitkeep")
-        if not os.path.exists(gitkeep_path):
-            with open(gitkeep_path, 'w') as f:
-                pass
-                
-        print_colored(f"✅ Cleaned {cleaned} items from {dir_path}", GREEN)
-    
-    return True
-
-
-def setup_and_activate_environment():
-    """Setup (if needed) and activate the virtual environment"""
-    config = get_config()
-    
-    # Check if we're already in the correct virtual environment
-    in_venv = (
-        hasattr(sys, 'real_prefix') or 
-        (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-    )
-    env_path = os.environ.get('CONDA_PREFIX') or os.environ.get('VIRTUAL_ENV')
-    conda_env_name = os.environ.get('CONDA_DEFAULT_ENV')
-    
-    if in_venv or env_path:
-        env_name = conda_env_name or (os.path.basename(env_path) if env_path else "unknown")
-        if (config['use_conda'] and conda_env_name == config['env_name']) or \
-           (not config['use_conda'] and env_path == config['venv_path']):
-            print_colored(f"✅ Already in the correct virtual environment: {env_name}", GREEN)
-            
-            # Even if we're in the correct environment, ensure dependencies are installed
-            print_colored("Ensuring all dependencies are installed...", YELLOW)
-            install_dependencies(config)
-            
-            return True, config
-        else:
-            print_colored(f"Warning: Currently in a different virtual environment: {env_name}", YELLOW)
-            print_colored(
-                f"Will attempt to switch to the required environment: {config['env_name']}",
-                YELLOW
-            )
-    
-    # Check if the environment exists
-    if venv_exists(config):
-        # Environment exists, just activate it
-        activated = activate_venv(config)
-        if activated:
-            # Install dependencies after activation
-            print_colored("Installing dependencies after activation...", YELLOW)
-            install_dependencies(config)
-        return activated, config
-    else:
-        # Environment doesn't exist, create and activate it
-        print_colored(
-            f"Virtual environment {config['env_name']} not found. Creating it now...",
-            YELLOW
-        )
-        if create_venv(config) and activate_venv(config) and install_dependencies(config):
-            print_colored("✅ Virtual environment setup complete!", GREEN)
-            return True, config
-        else:
-            print_colored("❌ Failed to set up the virtual environment", RED)
-            return False, config
-
-
-def run_progress_spinner(message, stop_event):
-    """Run a spinning animation to indicate progress"""
-    i = 0
-    steps = 0
-    
-    while not stop_event.is_set():
-        steps_indicator = "." * (steps % 4)
-        print(f"\r{CYAN}{message} {SPINNER_CHARS[i % len(SPINNER_CHARS)]} {steps_indicator:<3}{NC}", end="")
-        i += 1
-        if i % 10 == 0:
-            steps += 1
-        time.sleep(0.1)
-    
-    # Clear the line when done
-    print("\r" + " " * 100 + "\r", end="")
-
-
-def run_flake8(config, project_dir):
-    """Run flake8 to check code quality and show a summary"""
-    print_colored('\n🔍 Running flake8 code quality check', BLUE)
-    
-    # Install flake8 if not already installed
-    if config['use_conda']:
-        pip_bin = os.path.join(config['env_path'], 'bin', 'pip')
-        flake8_bin = os.path.join(config['env_path'], 'bin', 'flake8')
-    else:
-        pip_bin = config['pip_bin']
-        flake8_bin = os.path.join(os.path.dirname(config['pip_bin']), 'flake8')
-    
-    # Check if flake8 is installed
-    if not os.path.exists(flake8_bin):
-        print_colored("Installing flake8...", YELLOW)
-        run_command(f"{pip_bin} install flake8", shell=True)
-    
-    # Run flake8 on the project directory
-    print_colored(f"Running flake8 on {project_dir}...", GREEN)
-    
-    # Start a spinner animation for the scanning process
-    stop_spinner = False
-    
-    def run_spinner():
-        i = 0
-        while not stop_spinner:
-            print(f"\r{CYAN}Scanning Python files... {SPINNER_CHARS[i % len(SPINNER_CHARS)]}{NC}", end="")
-            i += 1
-            time.sleep(0.1)
-    
-    # Start spinner in a separate thread
-    spinner_thread = threading.Thread(target=run_spinner)
-    spinner_thread.daemon = True
-    spinner_thread.start()
-    
-    # Get stats about the code base
-    code_stats_cmd = f"find {project_dir} -name '*.py' | wc -l"
-    files_count_result = run_command(code_stats_cmd, shell=True, capture_output=True)
-    files_count = int(files_count_result.stdout.strip()) if files_count_result and files_count_result.stdout else 0
-    
-    lines_count_cmd = f"find {project_dir} -name '*.py' -exec cat {{}} \\; | wc -l"
-    lines_count_result = run_command(lines_count_cmd, shell=True, capture_output=True)
-    lines_count = int(lines_count_result.stdout.strip()) if lines_count_result and lines_count_result.stdout else 0
-    
-    # Stop the spinner
-    stop_spinner = True
-    spinner_thread.join(0.2)
-    print("\r" + " " * 50 + "\r", end="")  # Clear the spinner line
-    
-    has_critical_issues = False
-    has_style_issues = False
-    
-    # Run detailed style check
-    print_colored("\nDetailed style review:", BLUE)
-    
-    # Start a spinner for detailed style review
-    stop_spinner = False
-    spinner_thread = threading.Thread(target=run_spinner)
-    spinner_thread.daemon = True
-    spinner_thread.start()
-    
-    detailed_cmd = f"{flake8_bin} {project_dir} --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics"
-    detailed_result = run_command(detailed_cmd, shell=True, capture_output=True)
-    
-    # Stop the spinner
-    stop_spinner = True
-    spinner_thread.join(0.2)
-    print("\r" + " " * 50 + "\r", end="")  # Clear the spinner line
-    
-    if detailed_result and detailed_result.stdout:
-        # Check if there are actual issues by looking for line numbers in the output
-        if ":" in detailed_result.stdout:
-            has_style_issues = True
-            print(detailed_result.stdout)
-            
-            # Count issues by type
-            style_issues = detailed_result.stdout.strip().split('\n')
-            issue_count = len([line for line in style_issues if ":" in line])
-            
-            # Summary at the end
-            print_colored(f"\n📊 Analysis Summary:", BLUE)
-            print_colored(f"   - Files analyzed: {files_count}", GREEN)
-            print_colored(f"   - Lines analyzed: {lines_count}", GREEN)
-            print_colored(f"   - Critical errors: {'YES' if has_critical_issues else 'No'}", RED if has_critical_issues else GREEN)
-            print_colored(f"   - Style issues: {issue_count}", YELLOW if issue_count > 0 else GREEN)
-            
-            # Calculate error density
-            if lines_count > 0:
-                error_density = (issue_count / lines_count) * 1000  # Issues per 1000 lines
-                print_colored(f"   - Error density: {error_density:.2f} per 1000 lines", 
-                             YELLOW if error_density > 5 else GREEN)
-        else:
-            print_colored("✅ No style issues found", GREEN)
-    else:
-        print_colored("❌ Failed to run flake8 for style review", RED)
-    
-    return True
-
-
-def wait_for_confirmation():
-    """Wait for user to press ENTER to continue"""
-    print_colored("\n⏸️ Task completed", BLUE)
-    print_colored("   Press ENTER to return to main menu or Ctrl+C to exit...", YELLOW)
-    input()
-
-
-def get_default_images_dir(project_dir):
-    """Get the default images directory path"""
-    return os.path.join(project_dir, "images")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.venv_manager import setup_and_activate_environment, clean_directories
+from utils.code_quality import run_flake8
+from utils.utils import (
+    print_colored, run_command, run_progress_spinner, 
+    wait_for_confirmation, get_default_images_dir,
+    GREEN, BLUE, RED, YELLOW, CYAN, NC
+)
 
 
 def run_augmentation(config, project_dir):
-    """Run the image augmentation script"""
+    """Run the image augmentation script with balanced sampling across subdirectories"""
     print_colored("\n=== Image Augmentation Tool ===", BLUE)
     
     # Check if the script exists
@@ -418,24 +45,39 @@ def run_augmentation(config, project_dir):
     
     # Get list of valid images in the directory and subdirectories
     valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.JPG', '.JPEG', '.PNG']
-    valid_images = []
+    
+    # Dictionary to organize images by subdirectory
+    subdir_images = {}
+    all_valid_images = []
     
     if os.path.exists(images_dir):
         # Walk through directory and subdirectories
         for root, dirs, files in os.walk(images_dir):
+            subdir = os.path.relpath(root, images_dir)
+            subdir_images[subdir] = []
+            
             for file in files:
                 file_path = os.path.join(root, file)
                 if os.path.isfile(file_path) and os.path.splitext(file)[1] in valid_extensions:
                     # Store relative path from images_dir for better display
                     rel_path = os.path.relpath(file_path, images_dir)
-                    valid_images.append(rel_path)
+                    all_valid_images.append(rel_path)
+                    subdir_images[subdir].append(rel_path)
+    
+    # Remove empty subdirectories
+    subdir_images = {k: v for k, v in subdir_images.items() if v}
     
     # Show available images in the images directory if any
-    if valid_images:
+    if all_valid_images:
         print_colored("\nAvailable images in the default directory:", GREEN)
-        for i, file in enumerate(valid_images):
+        for i, file in enumerate(all_valid_images):
             print(f"  {i+1}. {file}")
-        print_colored(f"  Total: {len(valid_images)} images found", YELLOW)
+        print_colored(f"  Total: {len(all_valid_images)} images found", YELLOW)
+        
+        if len(subdir_images) > 1:  # Only show subdirectory info if there are multiple subdirs
+            print_colored("\nImages by subdirectory:", GREEN)
+            for subdir, images in subdir_images.items():
+                print(f"  {subdir}: {len(images)} images")
     else:
         print_colored(f"\nNo valid images found in {images_dir}", RED)
         print_colored("Please add some images to the directory and try again.", YELLOW)
@@ -443,43 +85,84 @@ def run_augmentation(config, project_dir):
     
     # Ask user for the image path to augment
     print_colored("\n🖼️ Image Augmentation Configuration", BLUE)
-    print_colored("Enter the path to the image you want to augment", GREEN)
-    print_colored(f"(or just the image name if it's in the default {images_dir} directory):", GREEN)
-    print_colored("Leave empty to select random images.", YELLOW)
+    print_colored(f"Enter the directory to augment (or press ENTER for default '{images_dir}' directory):", GREEN)
     image_input = input().strip()
     
     # Handle empty input - random selection mode
     if not image_input:
-        if not valid_images:
+        if not all_valid_images:
             print_colored("❌ No valid images found in the directory. Cancelling augmentation.", RED)
             return False
             
-        print_colored("\nRandom selection mode activated.", GREEN)
+        print_colored("\nBalanced random selection mode activated.", GREEN)
         print_colored("Enter the number of random images to process (or 'all' for all images):", GREEN)
         num_input = input().strip().lower()
         
         if num_input == 'all':
-            images_to_process = valid_images
-            print_colored(f"Processing all {len(images_to_process)} images", GREEN)
+            # Find the subdirectory with the minimum number of images for balanced selection
+            min_images_per_subdir = min([len(images) for subdir, images in subdir_images.items()])
+            total_images = min_images_per_subdir * len(subdir_images)
+            
+            print_colored(f"Balanced selection: {min_images_per_subdir} images from each of the {len(subdir_images)} subdirectories", GREEN)
+            print_colored(f"Total: {total_images} images will be processed", GREEN)
+            
+            images_to_process = []
+            import random
+            
+            # Select equal number of images from each subdirectory
+            for subdir, images in subdir_images.items():
+                if images:
+                    selected = random.sample(images, min(min_images_per_subdir, len(images)))
+                    images_to_process.extend(selected)
+                    print_colored(f"Selected {len(selected)} images from {subdir}", YELLOW)
         else:
             try:
-                num_images = int(num_input)
-                if num_images <= 0:
+                requested_num_images = int(num_input)
+                if requested_num_images <= 0:
                     print_colored("❌ Number must be positive. Cancelling augmentation.", RED)
                     return False
+                
+                # Calculate images per subdirectory to achieve balance
+                num_subdirs = len(subdir_images)
+                
+                if num_subdirs > 0:
+                    # Calculate images needed per subdirectory, rounded up to the nearest integer
+                    import math
+                    images_per_subdir = math.ceil(requested_num_images / num_subdirs)
                     
-                if num_images > len(valid_images):
-                    print_colored(f"Requested {num_images} images but only {len(valid_images)} are available.", YELLOW)
-                    print_colored(f"Will process all {len(valid_images)} available images instead.", YELLOW)
-                    num_images = len(valid_images)
+                    # Calculate total after balancing
+                    total_after_balancing = images_per_subdir * num_subdirs
                     
-                # Randomly select images
-                import random
-                images_to_process = random.sample(valid_images, num_images)
-                print_colored(f"Randomly selected {len(images_to_process)} images for processing:", GREEN)
-                for i, img in enumerate(images_to_process):
-                    print(f"  {i+1}. {img}")
+                    if total_after_balancing != requested_num_images:
+                        print_colored(f"For balanced selection across {num_subdirs} subdirectories:", YELLOW)
+                        print_colored(f"Adjusting from {requested_num_images} to {total_after_balancing} images total ({images_per_subdir} per subdirectory)", YELLOW)
                     
+                    images_to_process = []
+                    import random
+                    
+                    # Select balanced images from each subdirectory
+                    for subdir, images in subdir_images.items():
+                        if not images:
+                            continue
+                            
+                        # Select minimum between calculated images_per_subdir and available images
+                        to_select = min(images_per_subdir, len(images))
+                        selected = random.sample(images, to_select)
+                        images_to_process.extend(selected)
+                        
+                        print_colored(f"Selected {len(selected)} images from {subdir}", YELLOW)
+                    
+                    print_colored(f"Balanced selection complete: {len(images_to_process)} images selected", GREEN)
+                    
+                    # Display the selected images
+                    print_colored("\nImages selected for processing:", GREEN)
+                    for i, img in enumerate(images_to_process):
+                        print(f"  {i+1}. {img}")
+                else:
+                    # Fallback if no subdirectories with images
+                    print_colored(f"No subdirectories with images found. Using standard random selection.", YELLOW)
+                    num_images = min(requested_num_images, len(all_valid_images))
+                    images_to_process = random.sample(all_valid_images, num_images)
             except ValueError:
                 print_colored("❌ Invalid input. Please enter a number or 'all'. Cancelling augmentation.", RED)
                 return False
@@ -538,12 +221,19 @@ def run_augmentation(config, project_dir):
 
 def process_single_image(python_exe, augmentation_script, image_path):
     """Process a single image with the augmentation script"""
-    # Get project directory to define the output directory path
-    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(augmentation_script)))
+    # Get absolute path to the project directory (root directory)
+    # First get src directory, then go up one level to reach project root
+    script_dir = os.path.dirname(os.path.abspath(augmentation_script))
+    project_dir = os.path.dirname(script_dir)
     
     # Create images_augmented directory
     output_dir = os.path.join(project_dir, "images_augmented")
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Set current working directory to project root
+    # This makes relative paths in Augmentation.py start from project root
+    original_dir = os.getcwd()
+    os.chdir(project_dir)
     
     # Build the command to run the augmentation script with output directory
     command = [python_exe, augmentation_script, image_path, "--output", output_dir]
@@ -589,16 +279,19 @@ def process_single_image(python_exe, augmentation_script, image_path):
         
         print_colored(f"\n✅ Augmentation completed successfully for {os.path.basename(image_path)}", GREEN)
         return True
-        
+    
     except Exception as e:
         print_colored(f"Error: {e}", RED)
         return False
+    finally:
+        # Restore original working directory
+        os.chdir(original_dir)
 
 
 def run_distribution(config, project_dir):
     """Run the Distribution.py script to analyze file distribution"""
     distribution_script = os.path.join(project_dir, "src", "Distribution.py")
-    plots_dir = os.path.join(project_dir, "plot")
+    plots_dir = os.path.join(project_dir, "plots")
 
     os.makedirs(plots_dir, exist_ok=True)
 
@@ -763,7 +456,7 @@ def run_distribution(config, project_dir):
     except Exception as e:
         # Make sure to stop the spinner thread if there's an exception
         stop_event.set()
-        if progress_thread.is_alive():
+        if 'progress_thread' in locals() and progress_thread.is_alive():
             progress_thread.join(0.2)
         
         print_colored(f"Error: {e}", RED)
@@ -800,59 +493,69 @@ def run_distribution(config, project_dir):
 def show_menu(config, project_dir):
     """Show the main menu and handle user selection"""
     while True:
-        print_colored("\n=== Machine Learning Project Tools ===", BLUE)
-        print_colored("1. Run code quality check (flake8)", GREEN)
-        print_colored("2. Run data distribution analysis", GREEN)
-        print_colored("3. Run image augmentation", GREEN)
-        print_colored("0. Exit", GREEN)
-        
-        choice = input("\nEnter your choice (0-3): ").strip()
-        
-        if choice == '0':
-            print_colored("Exiting program. Goodbye!", BLUE)
+        try:
+            print_colored("\n=== Machine Learning Project Tools ===", BLUE)
+            print_colored("1. Run code quality check (flake8)", GREEN)
+            print_colored("2. Run data distribution analysis", GREEN)
+            print_colored("3. Run image augmentation", GREEN)
+            print_colored("0. Exit", GREEN)
+            
+            choice = input("\nEnter your choice (0-3): ").strip()
+            
+            if choice == '0':
+                print_colored("Exiting program. Goodbye!", BLUE)
+                sys.exit(0)
+            elif choice == '1':
+                run_flake8(config, project_dir)
+                wait_for_confirmation()
+            elif choice == '2':
+                run_distribution(config, project_dir)
+                wait_for_confirmation()
+            elif choice == '3':
+                run_augmentation(config, project_dir)
+                wait_for_confirmation()
+            else:
+                print_colored("Invalid choice. Please try again.", RED)
+                input("Press ENTER to continue...")
+        except KeyboardInterrupt:
+            print("\n")  # Add a newline for better formatting
+            print_colored("CTRL+C detected. Exiting program. Goodbye!", BLUE)
             sys.exit(0)
-        elif choice == '1':
-            run_flake8(config, project_dir)
-            wait_for_confirmation()
-        elif choice == '2':
-            run_distribution(config, project_dir)
-            wait_for_confirmation()
-        elif choice == '3':
-            run_augmentation(config, project_dir)
-            wait_for_confirmation()
-        else:
-            print_colored("Invalid choice. Please try again.", RED)
-            input("Press ENTER to continue...")
 
 
 def main():
-    clear_screen()
-    
-    # Setup and activate the environment
-    env_ready, config = setup_and_activate_environment()
-
-    if not env_ready:
-        print_colored("Failed to set up environment. Exiting.", RED)
-        sys.exit(1)
-
-    # Continue with the rest of the script
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.dirname(script_dir)
-
-    # Ensure the images directory exists
-    images_dir = get_default_images_dir(project_dir)
-    if not os.path.exists(images_dir):
-        print_colored(f"Creating default images directory: {images_dir}", YELLOW)
-        os.makedirs(images_dir, exist_ok=True)
+    try:
+        os.system('clear')
         
-    # Clean plot and images_augmented directories
-    print_colored("\nCleaning output directories after environment setup...", BLUE)
-    clean_directories(project_dir)
+        # Setup and activate the environment
+        env_ready, config = setup_and_activate_environment()
 
-    # Show the main menu and handle user selection
-    show_menu(config, project_dir)
+        if not env_ready:
+            print_colored("Failed to set up environment. Exiting.", RED)
+            sys.exit(1)
+
+        # Continue with the rest of the script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_dir = os.path.dirname(script_dir)
+
+        # Ensure the images directory exists
+        images_dir = get_default_images_dir(project_dir)
+        if not os.path.exists(images_dir):
+            print_colored(f"Creating default images directory: {images_dir}", YELLOW)
+            os.makedirs(images_dir, exist_ok=True)
+            
+        # Clean plot and images_augmented directories
+        print_colored("\nCleaning output directories after environment setup...", BLUE)
+        clean_directories(project_dir)
+
+        # Show the main menu and handle user selection
+        show_menu(config, project_dir)
+    
+    except KeyboardInterrupt:
+        print("\n")  # Add a newline for better formatting
+        print_colored("CTRL+C detected. Exiting program. Goodbye!", BLUE)
+        sys.exit(0)
 
 
 if __name__ == "__main__":
     main()
-  
