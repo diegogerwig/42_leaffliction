@@ -17,3 +17,7 @@ jupyter==1.0.0            # Notebooks interactivos para desarrollo y visualizaci
 
 # 📦 Otros
 flake8==7.0.0             # Herramienta de análisis estático de código
+
+# 🖼️ Image Processing (needed for Augmentation.py)
+opencv-python>=4.5.5      # Computer vision and image processing
+pyfiglet>=0.8.post1       # ASCII text banners for CLI
