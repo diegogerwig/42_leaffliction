@@ -431,12 +431,12 @@ def plot_transformations(transformations: Dict[str, np.ndarray], image_path: str
     
     # Add a main title with more spacing to avoid overlap with subplot titles
     plt.suptitle(f'Transformations: {os.path.basename(image_path)}', 
-                fontsize=16, 
+                fontsize=20, 
                 y=0.98)  # Position title higher to avoid overlap
     
     # Adjust layout with more top padding
     plt.tight_layout()
-    plt.subplots_adjust(top=0.90)  # Increase top margin to avoid overlap
+    plt.subplots_adjust(top=0.93)  # Increase top margin to avoid overlap
     
     # Create plots directory if it doesn't exist
     plots_dir = os.path.abspath("./plots")

@@ -318,8 +318,10 @@ def plot_images(images, filename):
         axes[2, col].axis('off')
     
     # Set the window title
-    plt.suptitle(f'Augmentation: {os.path.basename(filename)}', fontsize=16)
+    plt.suptitle(f'Augmentation: {os.path.basename(filename)}', fontsize=20, y=0.98)
     plt.tight_layout()
+
+    plt.subplots_adjust(top=0.93)
     
     # Create plots directory if it doesn't exist
     plots_dir = os.path.abspath("./plots")
