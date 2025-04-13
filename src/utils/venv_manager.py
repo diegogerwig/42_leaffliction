@@ -12,7 +12,6 @@ from utils.utils import (
 
 
 def get_config():
-    """Get configuration for virtual environment"""
     home = os.environ.get('HOME', os.path.expanduser('~'))
     
     if os.path.exists(f"{home}/sgoinfre"):
@@ -36,7 +35,6 @@ def get_config():
 
 
 def create_venv(config):
-    """Create a new virtual environment"""
     print_colored('\n🔆 Creating new virtual environment', BLUE)
     
     if config['use_conda']:
@@ -57,7 +55,6 @@ def create_venv(config):
 
 
 def venv_exists(config):
-    """Check if the virtual environment already exists"""
     if config['use_conda']:
         env_check = run_command("conda info --envs", shell=True, capture_output=True)
         return env_check and config['env_name'] in env_check.stdout
@@ -66,7 +63,6 @@ def venv_exists(config):
 
 
 def activate_venv(config):
-    """Activate the virtual environment"""
     print_colored('\n🐍 Activating virtual environment', BLUE)
     
     if config['use_conda']:
@@ -93,7 +89,6 @@ def activate_venv(config):
 
 
 def install_dependencies(config):
-    """Install dependencies from requirements.txt"""
     print_colored('\n🔗 Installing dependencies', BLUE)
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -122,12 +117,12 @@ def install_dependencies(config):
 
 
 def clean_directories(project_dir):
-    """Clean the plot and images_augmented directories while preserving .gitkeep files"""
     print_colored('\n🧹 Cleaning output directories', BLUE)
     
     dirs_to_clean = [
         os.path.join(project_dir, "plots"),
-        os.path.join(project_dir, "images_augmented")
+        os.path.join(project_dir, "images_augmented"),
+        os.path.join(project_dir, "images_transformed"),
     ]
     
     for dir_path in dirs_to_clean:
@@ -169,7 +164,6 @@ def clean_directories(project_dir):
 
 
 def setup_and_activate_environment():
-    """Setup (if needed) and activate the virtual environment"""
     config = get_config()
     
     # Check if we're already in the correct virtual environment
@@ -222,7 +216,6 @@ def setup_and_activate_environment():
 
 
 if __name__ == "__main__":
-    # This allows the script to be run directly for testing
     config = get_config()
     print_colored("Testing virtual environment management...", BLUE)
     result, config = setup_and_activate_environment()

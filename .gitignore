@@ -1,8 +1,6 @@
-**/images/*
-!**/images/.gitkeep
+**/images*/*
+!**/images*/.gitkeep
 
-**/images_augmented/*
-!**/images_augmented/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

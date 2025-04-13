@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (
     print_colored,
+    SPINNER_CHARS,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
 

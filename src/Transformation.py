@@ -15,6 +15,7 @@ from utils.utils import (
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Apply transformations to images or directories of images')
     parser.add_argument('path', type=str, help='Path to the image or directory')
@@ -311,6 +312,10 @@ def apply_transformations(image: np.ndarray, options: Dict[str, bool]) -> Dict[s
     return transformations
 
 def display_transformations(transformations: Dict[str, np.ndarray], title: str = "Image Transformations") -> None:
+    """
+    This function is kept for compatibility but not used in the main workflow.
+    It displays all transformations in a matplotlib figure.
+    """
     n = len(transformations)
     cols = 3
     rows = (n + cols - 1) // cols  # Ceiling division
@@ -336,8 +341,15 @@ def display_transformations(transformations: Dict[str, np.ndarray], title: str =
     plt.show()
 
 def save_transformations(transformations: Dict[str, np.ndarray], output_dir: str, filename: str) -> None:
+    """
+    Save transformed images to the output directory.
+    """
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
+    
+    # Print output directory similar to augmentation.py
+    print(f"Output directory: {output_dir}")
+    print(f"Saving transformed images to: {output_dir}")
     
     for name, img in transformations.items():
         # Convert back to BGR for saving (OpenCV uses BGR)
@@ -346,15 +358,130 @@ def save_transformations(transformations: Dict[str, np.ndarray], output_dir: str
         else:
             img_to_save = img
         
+        # Always use lowercase .jpg extension
         output_path = os.path.join(output_dir, f"{filename}_{name}.jpg")
         cv2.imwrite(output_path, img_to_save)
-        print(f"{GREEN}Saved:{NC} {output_path}")
+        print(f"Saved: {filename}_{name}.jpg")
 
-def transform_image(image_path: str, options: Dict[str, bool]) -> None:
+def plot_transformations(transformations: Dict[str, np.ndarray], image_path: str) -> str:
+    """
+    Generate a plot with all transformations and save it.
+    Similar to plot_images from Augmentation.py but with added axes and scales.
+    """
+    # Convert from BGR to RGB for display with matplotlib
+    rgb_images = {}
+    for name, img in transformations.items():
+        if len(img.shape) == 2:  # Grayscale image
+            rgb_img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        else:  # Already RGB
+            rgb_img = img
+        rgb_images[name] = rgb_img
+    
+    # Calculate rows and columns dynamically
+    n = len(transformations)
+    cols = 3
+    rows = (n + cols - 1) // cols  # Ceiling division
+    
+    # Create a figure of appropriate size - with more padding at the top for title
+    fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
+    
+    # Handle the case of a single row or column
+    if rows == 1 and cols == 1:
+        axes = np.array([axes])
+    elif rows == 1 or cols == 1:
+        axes = axes.reshape(-1)
+    
+    # Fill the subplots with images and add scales
+    for i, (name, img) in enumerate(rgb_images.items()):
+        row, col = divmod(i, cols)
+        if rows > 1 and cols > 1:
+            ax = axes[row, col]
+        else:
+            ax = axes[i]
+        
+        # Display image with scales
+        im = ax.imshow(img)
+        
+        # Add title for each subplot but move it slightly higher
+        ax.set_title(name.capitalize(), fontsize=12, pad=10)
+        
+        # Show axes with scales (like in Image 1)
+        ax.axis('on')
+        
+        # Add grid for better visibility of scales
+        ax.grid(False)  # Disable grid for cleaner look
+        
+        # Set ticks for better scale reading
+        height, width = img.shape[:2]
+        # Set x-ticks at every 50 pixels
+        x_ticks = np.arange(0, width, 50)
+        ax.set_xticks(x_ticks)
+        
+        # Set y-ticks at every 50 pixels
+        y_ticks = np.arange(0, height, 50)
+        ax.set_yticks(y_ticks)
+    
+    # Hide any empty subplots
+    for i in range(len(transformations), rows * cols):
+        row, col = divmod(i, cols)
+        if rows > 1 and cols > 1:
+            axes[row, col].axis('off')
+        elif i < len(axes):
+            axes[i].axis('off')
+    
+    # Add a main title with more spacing to avoid overlap with subplot titles
+    plt.suptitle(f'Transformations: {os.path.basename(image_path)}', 
+                fontsize=16, 
+                y=0.98)  # Position title higher to avoid overlap
+    
+    # Adjust layout with more top padding
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.90)  # Increase top margin to avoid overlap
+    
+    # Create plots directory if it doesn't exist
+    plots_dir = os.path.abspath("./plots")
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    # Generate filename for the plot
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    plot_filename = os.path.join(plots_dir, f"transformation_{base_name}.png")
+    
+    # Save the figure
+    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+    print(f"✅ Plot saved to: {plot_filename}")
+    
+    # Display the plot
+    plt.show()
+    
+    return plot_filename
+
+def transform_image(image_path: str, output_dir: str, options: Dict[str, bool]) -> None:
+    """
+    Apply transformations to a single image and generate a plot.
+    """
     try:
+        # Get the base name of the image (preserving original name)
+        filename = os.path.splitext(os.path.basename(image_path))[0]
+        
+        # Create a subdirectory for this image - fix the directory structure
+        img_output_dir = os.path.join(output_dir, filename)
+        os.makedirs(img_output_dir, exist_ok=True)
+        
+        # Load the image and apply transformations
         image = load_image(image_path)
         transformations = apply_transformations(image, options)
-        display_transformations(transformations, f"Transformations of {os.path.basename(image_path)}")
+        
+        # Save the transformed images directly to the image's subdirectory
+        save_transformations(transformations, img_output_dir, filename)
+        
+        # Generate and save the plot with all transformations
+        plot_filename = plot_transformations(transformations, image_path)
+        
+        print(f"{GREEN}Processed:{NC} {os.path.basename(image_path)}")
+        print(f"All transformations saved to: {img_output_dir}")
+        
+        print(f"✅ Processing completed successfully for {os.path.basename(image_path)}")
+        print(f"Results saved to: {img_output_dir}")
     except Exception as e:
         print(f"{RED}Error processing {image_path}:{NC} {e}")
 
@@ -375,17 +502,7 @@ def transform_directory(directory_path: str, output_dir: str, options: Dict[str,
     
     # Process each image
     for image_path in image_files:
-        try:
-            image = load_image(str(image_path))
-            transformations = apply_transformations(image, options)
-            
-            # Get filename without extension for saving
-            filename = os.path.splitext(os.path.basename(str(image_path)))[0]
-            save_transformations(transformations, output_dir, filename)
-            
-            print(f"{GREEN}Processed:{NC} {image_path.name}")
-        except Exception as e:
-            print(f"{RED}Error processing {image_path.name}:{NC} {e}")
+        transform_image(str(image_path), output_dir, options)
     
     print(f"\n{GREEN}All transformations saved to:{NC} {output_dir}")
 
@@ -396,7 +513,7 @@ def main():
     path, dest, options = parse_arguments()
     
     if os.path.isfile(path):
-        transform_image(path, options)
+        transform_image(path, dest, options)
     elif os.path.isdir(path):
         transform_directory(path, dest, options)
     else:

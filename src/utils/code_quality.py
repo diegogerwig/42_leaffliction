@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (
     print_colored, run_command, run_progress_spinner, 
     wait_for_confirmation, get_default_images_dir,
+    SPINNER_CHARS,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
 
