@@ -19,7 +19,6 @@ from utils.config_options import get_script_options
 
 
 def run_distribution(config, project_dir):
-    """Run the Distribution.py script to analyze file distribution"""
     distribution_script = os.path.join(project_dir, "src", "Distribution.py")
     plots_dir = os.path.join(project_dir, "plots")
 
@@ -47,7 +46,7 @@ def run_distribution(config, project_dir):
             print_colored(f"Created directory: {images_dir}", GREEN)
     
     # Count images in the directory and subdirectories
-    valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.JPG', '.JPEG', '.PNG']
+    valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff']
     image_count = 0
     subdirs = []
     
@@ -220,82 +219,7 @@ def run_distribution(config, project_dir):
         return False
 
 
-# def get_script_options(script_type):
-#     """
-#     Obtiene y procesa opciones para los scripts según su tipo.
-    
-#     Args:
-#         script_type: Tipo de script ('transformation' o 'augmentation')
-        
-#     Returns:
-#         list: Lista de argumentos adicionales para el script
-#     """
-#     if script_type == 'transformation':
-#         print_colored("\n🔧 Configuración de Transformación de Imágenes", BLUE)
-#         print_colored("Seleccione opciones de transformación:", GREEN)
-#         print_colored("1. Escala de grises", YELLOW)
-#         print_colored("2. Detección de bordes", YELLOW)
-#         print_colored("3. Desenfoque", YELLOW)
-#         print_colored("4. Enfoque", YELLOW)
-#         print_colored("5. Binario (Blanco y Negro)", YELLOW)
-#         print_colored("6. Mejora de contraste", YELLOW)
-#         print_colored("7. Máscara de hoja", YELLOW)
-#         print_colored("8. Objetos ROI", YELLOW)
-#         print_colored("9. Análisis de hojas", YELLOW)
-#         print_colored("10. Pseudolandmarks", YELLOW)
-#         print_colored("0. Todas las transformaciones", YELLOW)
-        
-#         transform_options = input("Ingrese números de transformaciones a aplicar (ej. 1,3,5) o 0 para todas: ").strip()
-        
-#         # Procesar opciones de transformación
-#         extra_args = []
-#         if transform_options == "0":
-#             extra_args.append("--all")
-#         else:
-#             # Mapear números de entrada con opciones de transformación
-#             option_map = {
-#                 "1": "--grayscale",
-#                 "2": "--edges",
-#                 "3": "--blur",
-#                 "4": "--sharpen",
-#                 "5": "--binary",
-#                 "6": "--contrast",
-#                 "7": "--mask",
-#                 "8": "--roi",
-#                 "9": "--analyze",
-#                 "10": "--landmarks"
-#             }
-            
-#             selected_options = transform_options.split(",")
-#             for opt in selected_options:
-#                 opt = opt.strip()
-#                 if opt in option_map:
-#                     extra_args.append(option_map[opt])
-        
-#         if not extra_args:
-#             print_colored("❌ No se seleccionaron opciones válidas. Usando predeterminadas (todas).", YELLOW)
-#             extra_args.append("--all")
-            
-#         return extra_args
-        
-#     elif script_type == 'augmentation':
-#         # Para el script de augmentación no hay opciones adicionales actualmente
-#         return []
-    
-#     return []
-
-
 def run_transformation(config, project_dir):
-    """
-    Execute the transformation script on selected images.
-    
-    Args:
-        config: Environment configuration
-        project_dir: Project directory
-        
-    Returns:
-        bool: True if execution was successful, False otherwise
-    """
     print_colored("\n=== Image Transformation Tool ===", BLUE)
     
     # Check if the script exists
@@ -392,69 +316,59 @@ def run_transformation(config, project_dir):
 
 
 def run_augmentation(config, project_dir):
-    """
-    Ejecuta el script de augmentación en imágenes seleccionadas.
+    print_colored("\n=== Image Augmentation Tool ===", BLUE)
     
-    Args:
-        config: Configuración del entorno
-        project_dir: Directorio del proyecto
-        
-    Returns:
-        bool: True si la ejecución fue exitosa, False en caso contrario
-    """
-    print_colored("\n=== Herramienta de Augmentación de Imágenes ===", BLUE)
-    
-    # Verificar si existe el script
+    # Check if the script exists
     script_dir = os.path.join(project_dir, "src")
     augmentation_script = os.path.join(script_dir, "Augmentation.py")
     
     if not os.path.exists(augmentation_script):
-        print_colored(f"❌ No se encontró Augmentation.py en {augmentation_script}", RED)
+        print_colored(f"❌ Augmentation.py not found at {augmentation_script}", RED)
         return False
     
-    # Configurar el ejecutable de Python según el entorno
+    # Configure Python executable according to environment
     if config['use_conda']:
         python_exe = os.path.join(config['env_path'], 'bin', 'python')
     else:
         python_exe = config['python_bin']
     
-    # Directorio base de imágenes
+    # Base image directory
     images_dir = os.path.join(project_dir, "images")
     
-    # Crear directorio de imágenes aumentadas
+    # Create augmented images directory
     augmented_dir = os.path.join(project_dir, "images_augmented")
     os.makedirs(augmented_dir, exist_ok=True)
     
-    # Verificar si existe el directorio de imágenes
+    # Check if images directory exists
     if not os.path.exists(images_dir):
-        print_colored(f"Directorio de imágenes no encontrado en {images_dir}. Creándolo ahora...", YELLOW)
+        print_colored(f"Images directory not found at {images_dir}. Creating now...", YELLOW)
         os.makedirs(images_dir, exist_ok=True)
-        print_colored(f"✅ Directorio de imágenes creado: {images_dir}", GREEN)
+        print_colored(f"✅ Images directory created: {images_dir}", GREEN)
     
-    # Obtener lista de imágenes válidas
+    # Get list of valid images
     all_valid_images, subdir_images = find_valid_images(images_dir)
     
-    # Mostrar imágenes disponibles
+    # Show available images
     if all_valid_images:
-        print_colored("\nImágenes disponibles en el directorio predeterminado:", GREEN)
+        print_colored("\nAvailable images in default directory:", GREEN)
         for i, file in enumerate(all_valid_images):
             print(f"  {i+1}. {file}")
-        print_colored(f"  Total: {len(all_valid_images)} imágenes encontradas", YELLOW)
+        print_colored(f"  Total: {len(all_valid_images)} images found", YELLOW)
         
-        if len(subdir_images) > 1:  # Solo mostrar info de subdirectorios si hay múltiples
-            print_colored("\nImágenes por subdirectorio:", GREEN)
+        if len(subdir_images) > 1:  # Only show subdirectory info if there are multiple
+            print_colored("\nImages by subdirectory:", GREEN)
             for subdir, images in subdir_images.items():
-                print(f"  {subdir}: {len(images)} imágenes")
+                print(f"  {subdir}: {len(images)} images")
     else:
-        print_colored(f"\nNo se encontraron imágenes válidas en {images_dir}", RED)
-        print_colored("Por favor, añada algunas imágenes al directorio e intente de nuevo.", YELLOW)
+        print_colored(f"\nNo valid images found in {images_dir}", RED)
+        print_colored("Please add some images to the directory and try again.", YELLOW)
         return False
     
-    # Solicitar al usuario el directorio a utilizar
-    print_colored(f"\nIngrese el directorio a aumentar (o presione ENTER para usar el predeterminado '{images_dir}'):", GREEN)
+    # Ask user for directory to use
+    print_colored(f"\nEnter directory to augment (or press ENTER to use default '{images_dir}'):", GREEN)
     image_dir_input = input().strip()
     
-    # Determinar el directorio a usar
+    # Determine directory to use
     target_dir = images_dir
     if image_dir_input:
         if os.path.isabs(image_dir_input) and os.path.exists(image_dir_input):
@@ -462,28 +376,28 @@ def run_augmentation(config, project_dir):
         elif os.path.exists(os.path.join(images_dir, image_dir_input)):
             target_dir = os.path.join(images_dir, image_dir_input)
         else:
-            print_colored(f"❌ Directorio no encontrado: {image_dir_input}. Usando directorio predeterminado: {images_dir}", YELLOW)
+            print_colored(f"❌ Directory not found: {image_dir_input}. Using default directory: {images_dir}", YELLOW)
     
-    print_colored(f"Usando directorio: {target_dir}", GREEN)
+    print_colored(f"Using directory: {target_dir}", GREEN)
     
-    # Volver a buscar imágenes en el directorio seleccionado
+    # Find images in selected directory again
     target_images, target_subdir_images = find_valid_images(target_dir)
     
     if not target_images:
-        print_colored(f"❌ No se encontraron imágenes en {target_dir}", RED)
+        print_colored(f"❌ No images found in {target_dir}", RED)
         return False
     
-    # Mostrar cantidad de imágenes en subdirectorios
+    # Show number of images in subdirectories
     if len(target_subdir_images) > 1:
-        print_colored("\nDistribución de imágenes en el directorio seleccionado:", GREEN)
+        print_colored("\nImage distribution in selected directory:", GREEN)
         for subdir, images in target_subdir_images.items():
-            print(f"  {subdir}: {len(images)} imágenes")
+            print(f"  {subdir}: {len(images)} images")
     
-    # Preguntar cuántas imágenes procesar
-    print_colored("\nIngrese el número de imágenes a procesar (o 'all' para procesar todas):", GREEN)
+    # Ask how many images to process
+    print_colored("\nEnter the number of images to process (or 'all' to process all):", GREEN)
     num_images_input = input().strip().lower()
     
-    # Procesar el lote de imágenes
+    # Process the batch of images
     return process_images_batch(
         python_exe,
         augmentation_script,
@@ -495,40 +409,35 @@ def run_augmentation(config, project_dir):
 
 
 def show_menu(config, project_dir):
-    """Show the main menu and handle user selection"""
     while True:
-        try:
-            print_colored("\n=== Machine Learning Project Tools ===", BLUE)
-            print_colored("1. Run code quality check (flake8)", GREEN)
-            print_colored("2. Run data distribution analysis", GREEN)
-            print_colored("3. Run image augmentation", GREEN)
-            print_colored("4. Run image transformation", GREEN)
-            print_colored("0. Exit", GREEN)
-            
-            choice = input("\nEnter your choice (0-4): ").strip()
-            
-            if choice == '0':
-                print_colored("Exiting program. Goodbye!", BLUE)
-                sys.exit(0)
-            elif choice == '1':
-                run_flake8(config, project_dir)
-                wait_for_confirmation()
-            elif choice == '2':
-                run_distribution(config, project_dir)
-                wait_for_confirmation()
-            elif choice == '3':
-                run_augmentation(config, project_dir)
-                wait_for_confirmation()
-            elif choice == '4':
-                run_transformation(config, project_dir)
-                wait_for_confirmation()
-            else:
-                print_colored("Invalid choice. Please try again.", RED)
-                input("Press ENTER to continue...")
-        except KeyboardInterrupt:
-            print("\n")  # Add a newline for better formatting
-            print_colored("CTRL+C detected. Exiting program. Goodbye!", BLUE)
+        print_colored("\n=== Machine Learning Project Tools ===", BLUE)
+        print_colored("1. Run code quality check (flake8)", GREEN)
+        print_colored("2. Run data distribution analysis", GREEN)
+        print_colored("3. Run image augmentation", GREEN)
+        print_colored("4. Run image transformation", GREEN)
+        print_colored("0. Exit", GREEN)
+        
+        choice = input("\nEnter your choice (0-4): ").strip()
+        
+        if choice == '0':
+            print_colored("\nExiting program!", BLUE)
             sys.exit(0)
+        elif choice == '1':
+            run_flake8(config, project_dir)
+            wait_for_confirmation()
+        elif choice == '2':
+            run_distribution(config, project_dir)
+            wait_for_confirmation()
+        elif choice == '3':
+            run_augmentation(config, project_dir)
+            wait_for_confirmation()
+        elif choice == '4':
+            run_transformation(config, project_dir)
+            wait_for_confirmation()
+        else:
+            print_colored("Invalid choice. Please try again.", RED)
+            print_colored("\nPress ENTER to continue...", CYAN)
+            input("")
 
 
 def main():
@@ -560,8 +469,7 @@ def main():
         show_menu(config, project_dir)
     
     except KeyboardInterrupt:
-        print("\n")  # Add a newline for better formatting
-        print_colored("CTRL+C detected. Exiting program. Goodbye!", BLUE)
+        print_colored("\nCTRL+C detected. \nExiting program!", BLUE)
         sys.exit(0)
 
 

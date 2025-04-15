@@ -21,7 +21,6 @@ def print_colored(text, color):
 
 
 def run_command(command, shell=False, capture_output=False):
-    """Run a shell command and handle errors"""
     try:
         if shell:
             if capture_output:
@@ -43,7 +42,6 @@ def run_command(command, shell=False, capture_output=False):
 
 
 def run_progress_spinner(message, stop_event):
-    """Run a spinning animation to indicate progress"""
     i = 0
     steps = 0
     
@@ -54,18 +52,37 @@ def run_progress_spinner(message, stop_event):
         if i % 10 == 0:
             steps += 1
         time.sleep(0.1)
-    
+    2
     # Clear the line when done
     print("\r" + " " * 100 + "\r", end="")
 
 
 def wait_for_confirmation():
-    """Wait for user to press ENTER to continue"""
-    print_colored("\n⏸️ Task completed", BLUE)
-    print_colored("   Press ENTER to return to main menu or Ctrl+C to exit...", YELLOW)
+    print_colored("\n🏁 Task completed", YELLOW)
+    print_colored("\nPress ENTER to return to main menu or Ctrl+C to exit...", CYAN)
     input()
 
 
 def get_default_images_dir(project_dir):
-    """Get the default images directory path"""
     return os.path.join(project_dir, "images")
+
+
+def extract_source_category(image_path):
+    path_parts = os.path.normpath(image_path).split(os.sep)
+    
+    # Look for exact matches first
+    for part in path_parts:
+        if part.lower() in ["black", "healthy", "rust"]:
+            return part.lower()
+    
+    # Look for patterns in directory names
+    for part in path_parts:
+        part_lower = part.lower()
+        if "black" in part_lower or "rot" in part_lower:
+            return "black"
+        elif "healthy" in part_lower:
+            return "healthy"
+        elif "rust" in part_lower:
+            return "rust"
+    
+    return "unknown"

@@ -8,14 +8,14 @@ import re
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (
-    print_colored, run_command, run_progress_spinner, 
+    print_colored, run_command, run_progress_spinner, extract_source_category,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
 
 
 def find_valid_images(images_dir):
     """Find all valid images in a directory and subdirectories"""
-    valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff', '.JPG', '.JPEG', '.PNG']
+    valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff']
     
     # Dictionary to organize images by subdirectory
     subdir_images = {}
@@ -255,24 +255,17 @@ def run_script_on_image(python_exe, script_path, image_path, output_dir=None, ex
         # Restore original working directory
         os.chdir(original_dir)
         
+
 def process_script_with_image(python_exe, script_path, image_path, output_dir, extra_args=None):
     # Get base filename of the image (without extension)
     base_filename = os.path.splitext(os.path.basename(image_path))[0]
     
+    # Extract source directory information with the improved function
+    source_dir = extract_source_category(image_path)
+    
     # Determine script type
     is_transformation = "Transformation.py" in script_path
     is_augmentation = "Augmentation.py" in script_path
-    
-    # Create specific subdirectory for this image if needed
-    # For both Transformation.py and Augmentation.py, use one subdirectory per image with original name
-    if is_transformation or is_augmentation:
-        # Create a subdirectory with the original image name
-        image_output_dir = os.path.join(output_dir, base_filename)
-    else:
-        # For other scripts, use the provided directory
-        image_output_dir = output_dir
-    
-    os.makedirs(image_output_dir, exist_ok=True)
     
     # Get the project directory (root directory)
     script_dir = os.path.dirname(os.path.abspath(script_path))
@@ -288,13 +281,13 @@ def process_script_with_image(python_exe, script_path, image_path, output_dir, e
     # Add specific arguments according to script type
     if is_transformation:
         # For Transformation.py, add --dest and the specific output directory
-        dest_args = ["--dest", image_output_dir]
+        dest_args = ["--dest", output_dir]
         if extra_args:
             command.extend(extra_args)
         command.extend(dest_args)
     elif is_augmentation:
         # For Augmentation.py, add --output and the specific output directory
-        output_args = ["--output", image_output_dir]
+        output_args = ["--output", output_dir]
         if extra_args:
             command.extend(extra_args)
         command.extend(output_args)
@@ -304,11 +297,11 @@ def process_script_with_image(python_exe, script_path, image_path, output_dir, e
             command.extend(extra_args)
     
     try:
-        print_colored(f"\nProcessing image: {os.path.basename(image_path)}...", GREEN)
+        print_colored(f"\nProcessing image: {os.path.basename(image_path)} from {source_dir}...", GREEN)
         
         # Create progress animation
         stop_event = threading.Event()
-        progress_message = f"Processing image {os.path.basename(image_path)}"
+        progress_message = f"Processing image {os.path.basename(image_path)} ({source_dir})"
         progress_thread = threading.Thread(target=run_progress_spinner, args=(progress_message, stop_event))
         progress_thread.daemon = True
         progress_thread.start()
@@ -343,7 +336,7 @@ def process_script_with_image(python_exe, script_path, image_path, output_dir, e
             return False
         
         print_colored(f"\n✅ Processing completed successfully for {os.path.basename(image_path)}", GREEN)
-        print_colored(f"Results saved to: {image_output_dir}", GREEN)
+        print_colored(f"Results saved to: {output_dir}", GREEN)
         return True
     
     except Exception as e:
@@ -405,16 +398,8 @@ def process_images_batch(python_exe, script_path, images_dir, output_dir, image_
             image_path = os.path.join(images_dir, img_file)
             print_colored(f"\nProcessing: {img_file}", BLUE)
             
-            # Get the basename and create subdirectory with original image name
-            image_basename = os.path.basename(image_path)
-            name_without_ext = os.path.splitext(image_basename)[0]
-
-            # For both transformation and augmentation, create a subdirectory with original image name
-            image_output_dir = os.path.join(output_dir, name_without_ext)
-            
-            os.makedirs(image_output_dir, exist_ok=True)
-            
-            success = process_script_with_image(python_exe, script_path, image_path, image_output_dir, extra_args)
+            # Process the image directly without creating subdirectories
+            success = process_script_with_image(python_exe, script_path, image_path, output_dir, extra_args)
             if success:
                 success_count += 1
         
@@ -440,16 +425,8 @@ def process_images_batch(python_exe, script_path, images_dir, output_dir, image_
             for img_rel_path in dir_images:
                 img_path = os.path.join(image_selection, img_rel_path)
                 
-                # Get the basename and create subdirectory with original image name
-                image_basename = os.path.basename(img_path)
-                name_without_ext = os.path.splitext(image_basename)[0]
-                
-                # For both transformation and augmentation, create a subdirectory with original image name
-                image_output_dir = os.path.join(output_dir, name_without_ext)
-                
-                os.makedirs(image_output_dir, exist_ok=True)
-                
-                success = process_script_with_image(python_exe, script_path, img_path, image_output_dir, extra_args)
+                # Process the image directly without creating subdirectories
+                success = process_script_with_image(python_exe, script_path, img_path, output_dir, extra_args)
                 if success:
                     success_count += 1
             

@@ -10,9 +10,10 @@ from pyfiglet import Figlet
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (
-    print_colored,
+    print_colored, run_command, run_progress_spinner, extract_source_category,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
+from utils.plot_images import plot_image_set
 
 
 def parse_argument():
@@ -59,7 +60,11 @@ def parse_argument():
 
 
 def read_image(filename):
-    return cv2.imread(filename)
+    """Read the image and return it in BGR format (OpenCV default)"""
+    img = cv2.imread(filename)
+    if img is None:
+        raise ValueError(f"Could not read image: {filename}")
+    return img
 
 
 def flip_image(image, flip_code=1):
@@ -249,97 +254,26 @@ def crop_image(image, crop_percentage=None):
 
 
 def save_images(images, filename, output_dir):
-    # Get the filename without extension
+    # Get the filename without extension and directory information
     basename = os.path.basename(filename)
     name, ext = os.path.splitext(basename)
     
-    # Create subdirectory with the image name
-    img_output_dir = os.path.join(output_dir, name)
-    os.makedirs(img_output_dir, exist_ok=True)
+    # Extract source directory information with improved function
+    source_dir = extract_source_category(filename)
     
-    print(f"{GREEN}Saving augmented images to: {img_output_dir}{NC}")
+    print(f"{GREEN}Saving augmented images to: {output_dir}{NC}")
     
     # Skip the original image when saving (we don't need to save it again)
     for label, image in images.items():
         if label == "Original":
             continue
             
-        # Construct the new filename with the augmentation type
-        new_filename = os.path.join(img_output_dir, f"{name}_{label}{ext}")
+        # Construct the new filename with the augmentation type and source directory
+        new_filename = os.path.join(output_dir, f"{name}_{source_dir}_{label.lower()}{ext}")
         
-        # Save the image
+        # Save the image - Make sure we're saving in the same format as we read (BGR for OpenCV)
         cv2.imwrite(new_filename, image)
         print(f"Saved: {os.path.basename(new_filename)}")
-
-
-def plot_images(images, filename):
-    """
-    Plot original and augmented images in a 3x3 grid and save to ./plots directory
-    """
-    # Convert BGR to RGB for display with matplotlib
-    rgb_images = {label: cv2.cvtColor(img, cv2.COLOR_BGR2RGB) 
-                 for label, img in images.items()}
-    
-    # Fixed layout: 3 rows, 3 columns
-    nrows, ncols = 3, 3
-    
-    # Create a figure with 3x3 grid
-    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 15))
-    
-    # Plot the original image in the top row, centered
-    ax = axes[0, 1]  # Center position in the first row
-    ax.imshow(rgb_images["Original"])
-    ax.set_title("Original", fontsize=12)
-    ax.axis('off')
-    
-    # Turn off the unused subplots in the first row
-    axes[0, 0].axis('off')
-    axes[0, 2].axis('off')
-    
-    # Create a list of the augmented images (all except the original)
-    augmented_images = [(label, img) for label, img in rgb_images.items() if label != "Original"]
-    
-    # Plot the first 3 augmented images in the second row
-    for col, (label, image) in enumerate(augmented_images[:3]):
-        ax = axes[1, col]
-        ax.imshow(image)
-        ax.set_title(label, fontsize=12)
-        ax.axis('off')
-    
-    # Plot the remaining 3 augmented images in the third row
-    for col, (label, image) in enumerate(augmented_images[3:]):
-        ax = axes[2, col]
-        ax.imshow(image)
-        ax.set_title(label, fontsize=12)
-        ax.axis('off')
-    
-    # Fill any remaining empty spots in the third row
-    for col in range(len(augmented_images[3:]), 3):
-        axes[2, col].axis('off')
-    
-    # Set the window title
-    plt.suptitle(f'Augmentation: {os.path.basename(filename)}', fontsize=20, y=0.98)
-    plt.tight_layout()
-
-    plt.subplots_adjust(top=0.93)
-    
-    # Create plots directory if it doesn't exist
-    plots_dir = os.path.abspath("./plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    
-    # Generate a filename for the saved plot
-    base_name = os.path.splitext(os.path.basename(filename))[0]
-    plot_filename = os.path.join(plots_dir, f"augmentation_{base_name}.png")
-    
-    # Save the figure
-    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-    print(f"✅ Plot saved to: {plot_filename}")
-    
-    # Show the plot
-    plt.show()
-    
-    return plot_filename
-
 
 def main():
     # Parse command line arguments to get the filename and output directory
@@ -347,7 +281,7 @@ def main():
     filename = args.image
     output_dir = args.output
 
-    # Read the image
+    # Read the image - this will be in BGR format (OpenCV default)
     image = read_image(filename)
     
     if image is None:
@@ -355,6 +289,7 @@ def main():
         sys.exit(1)
 
     # Dictionary with the label of the image as key and the augmented image as value
+    # All operations will preserve the BGR color space
     images = {
         "Original": image,
         "Flipped": flip_image(image),
@@ -368,8 +303,25 @@ def main():
     # Save the augmented images
     save_images(images, filename, output_dir)
     
-    # Display the original and augmented images
-    plot_images(images, filename)
+    # Extract source directory information with improved function
+    from utils.utils import extract_source_category
+    source_dir = extract_source_category(filename)
+    
+    # Get base name without extension
+    base_filename = os.path.splitext(os.path.basename(filename))[0]
+    
+    # Create a simplified custom title with directory path format
+    custom_title = f"Augmentation: {base_filename} (./{source_dir})"
+    
+    # Use the unified plotting function with custom title
+    plot_filename = plot_image_set(
+        images, 
+        filename, 
+        title_prefix="augmentation_", 
+        custom_title=custom_title
+    )
+    
+    print(f"✅ Plot saved to: {plot_filename}")
 
 
 if __name__ == "__main__":

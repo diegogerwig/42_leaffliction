@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 import os
+import sys
 import argparse
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from pyfiglet import Figlet
-import sys
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional, Any, Union
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (
-    print_colored,
+    print_colored, run_command, run_progress_spinner, extract_source_category,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
+from utils.plot_images import plot_image_set
 
 
 def parse_arguments():
@@ -75,42 +76,86 @@ def load_image(image_path: str) -> np.ndarray:
     if img is None:
         raise ValueError(f"Could not read image: {image_path}")
     
-    # Convert from BGR to RGB (OpenCV uses BGR by default)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    # Keep the image in BGR format (OpenCV default)
     return img
 
-def create_leaf_mask(image: np.ndarray) -> np.ndarray:
+def convert_to_grayscale(image: np.ndarray) -> np.ndarray:
     """
-    Create a binary mask of the leaf area.
+    Convert an image to grayscale.
+    If the image is already grayscale, return it as is.
     """
-    # Convert to grayscale
-    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    if len(image.shape) == 2:
+        return image  # Already grayscale
     
-    # Apply Gaussian blur to reduce noise
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+def apply_edge_detection(image: np.ndarray) -> np.ndarray:
+    """
+    Apply Canny edge detection.
+    """
+    # Convert to grayscale if needed
+    gray = convert_to_grayscale(image)
+    
+    # Apply Canny edge detection
+    edges = cv2.Canny(gray, 100, 200)
+    
+    # Convert back to color format for consistency
+    if len(image.shape) == 3:
+        edges = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    
+    return edges
+
+def apply_gaussian_blur(image: np.ndarray) -> np.ndarray:
+    """
+    Apply Gaussian blur.
+    """
+    return cv2.GaussianBlur(image, (5, 5), 0)
+
+def sharpen_image(image: np.ndarray) -> np.ndarray:
+    """
+    Sharpen an image using unsharp masking.
+    """
+    # Apply Gaussian blur
+    blurred = cv2.GaussianBlur(image, (0, 0), 3)
+    
+    # Subtract blurred image from original
+    sharpened = cv2.addWeighted(image, 1.5, blurred, -0.5, 0)
+    
+    return sharpened
+
+def convert_to_binary(image: np.ndarray) -> np.ndarray:
+    """
+    Convert an image to binary (black and white).
+    """
+    # Convert to grayscale if needed
+    gray = convert_to_grayscale(image)
     
     # Apply Otsu's thresholding
-    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # Find the largest contour (assumed to be the leaf)
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Convert back to color format for consistency
+    if len(image.shape) == 3:
+        binary = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
     
-    # Create an empty mask
-    mask = np.zeros_like(binary)
-    
-    if contours:
-        # Find the largest contour by area
-        largest_contour = max(contours, key=cv2.contourArea)
+    return binary
+
+def enhance_contrast(image: np.ndarray) -> np.ndarray:
+    """
+    Enhance image contrast using histogram equalization.
+    """
+    # If image is color, convert to YUV and equalize only the Y channel
+    if len(image.shape) == 3:
+        # Convert to YUV
+        yuv = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
         
-        # Fill the largest contour
-        cv2.drawContours(mask, [largest_contour], 0, 255, -1)
-    
-    # Apply morphological operations to clean up the mask
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    
-    return mask
+        # Equalize the Y channel
+        yuv[:,:,0] = cv2.equalizeHist(yuv[:,:,0])
+        
+        # Convert back to BGR
+        return cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR)
+    else:
+        # If image is grayscale, directly apply equalization
+        return cv2.equalizeHist(image)
 
 def generate_roi_objects(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """
@@ -154,7 +199,7 @@ def analyze_leaf_object(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
             cv2.ellipse(analyzed_image, ellipse, (255, 0, 255), 2)
         
         # Find veins using edge detection on the leaf area
-        leaf_area = cv2.bitwise_and(cv2.cvtColor(image, cv2.COLOR_RGB2GRAY), mask)
+        leaf_area = cv2.bitwise_and(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), mask)
         veins = cv2.Canny(leaf_area, 100, 200)
         veins_dilated = cv2.dilate(veins, np.ones((3, 3), np.uint8), iterations=1)
         
@@ -199,7 +244,7 @@ def generate_pseudolandmarks(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
             cv2.circle(landmark_image, center, 8, (255, 0, 255), -1)
             
             # Find disease spots (simplified approach - looking for darker/browner regions)
-            hsv = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+            hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
             lower_brown = np.array([0, 50, 50])
             upper_brown = np.array([30, 255, 150])
             disease_mask = cv2.inRange(hsv, lower_brown, upper_brown)
@@ -221,310 +266,166 @@ def generate_pseudolandmarks(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
     
     return landmark_image
 
-def apply_transformations(image: np.ndarray, options: Dict[str, bool]) -> Dict[str, np.ndarray]:
-    transformations = {}
+def create_leaf_mask(image: np.ndarray) -> np.ndarray:
+    """
+    Create a binary mask of the leaf area.
+    """
+    # Convert to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     
-    # Original image
-    transformations['original'] = image
+    # Apply Gaussian blur to reduce noise
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     
-    # Grayscale
-    if options.get('grayscale', False):
-        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        transformations['grayscale'] = gray
+    # Apply Otsu's thresholding
+    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     
-    # Edge detection (Canny)
-    if options.get('edges', False):
-        if 'grayscale' in transformations:
-            gray = transformations['grayscale']
-        else:
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+    # Find the largest contour (assumed to be the leaf)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Create an empty mask
+    mask = np.zeros_like(binary)
+    
+    if contours:
+        # Find the largest contour by area
+        largest_contour = max(contours, key=cv2.contourArea)
         
-        # Automatic edge detection
-        sigma = 0.33
-        v = np.median(gray)
-        lower = int(max(0, (1.0 - sigma) * v))
-        upper = int(min(255, (1.0 + sigma) * v))
-        edges = cv2.Canny(gray, lower, upper)
-        
-        # Convert to RGB for display consistency
-        edges_rgb = cv2.cvtColor(edges, cv2.COLOR_GRAY2RGB)
-        transformations['edges'] = edges_rgb
+        # Fill the largest contour
+        cv2.drawContours(mask, [largest_contour], 0, 255, -1)
     
-    # Gaussian blur
-    if options.get('blur', False):
-        blurred = cv2.GaussianBlur(image, (15, 15), 0)
-        transformations['blur'] = blurred
+    # Apply morphological operations to clean up the mask
+    kernel = np.ones((5, 5), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     
-    # Sharpen
-    if options.get('sharpen', False):
-        kernel = np.array([[-1, -1, -1], 
-                           [-1,  9, -1], 
-                           [-1, -1, -1]])
-        sharpened = cv2.filter2D(image, -1, kernel)
-        transformations['sharpen'] = sharpened
-    
-    # Binary (black and white)
-    if options.get('binary', False):
-        if 'grayscale' in transformations:
-            gray = transformations['grayscale']
-        else:
-            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
-        
-        _, binary = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        binary_rgb = cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
-        transformations['binary'] = binary_rgb
-    
-    # Contrast enhancement
-    if options.get('contrast', False):
-        lab = cv2.cvtColor(image, cv2.COLOR_RGB2LAB)
-        l, a, b = cv2.split(lab)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-        cl = clahe.apply(l)
-        enhanced_lab = cv2.merge((cl, a, b))
-        enhanced = cv2.cvtColor(enhanced_lab, cv2.COLOR_LAB2RGB)
-        transformations['contrast'] = enhanced
-    
-    # Create leaf mask (required for advanced transformations)
-    mask = None
-    if options.get('mask', False) or options.get('roi', False) or options.get('analyze', False) or options.get('landmarks', False):
-        mask = create_leaf_mask(image)
-    
-    # Mask transformation
-    if options.get('mask', False) and mask is not None:
-        mask_rgb = cv2.cvtColor(mask, cv2.COLOR_GRAY2RGB)
-        transformations['mask'] = mask_rgb
-    
-    # ROI objects
-    if options.get('roi', False) and mask is not None:
-        roi_image = generate_roi_objects(image, mask)
-        transformations['roi'] = roi_image
-    
-    # Analyze leaf
-    if options.get('analyze', False) and mask is not None:
-        analyzed_image = analyze_leaf_object(image, mask)
-        transformations['analyze'] = analyzed_image
-    
-    # Pseudolandmarks
-    if options.get('landmarks', False) and mask is not None:
-        landmark_image = generate_pseudolandmarks(image, mask)
-        transformations['landmarks'] = landmark_image
-    
-    return transformations
+    return mask
 
-def display_transformations(transformations: Dict[str, np.ndarray], title: str = "Image Transformations") -> None:
+def save_transformed_images(transformed_images, original_image_path, output_dir):
     """
-    This function is kept for compatibility but not used in the main workflow.
-    It displays all transformations in a matplotlib figure.
-    """
-    n = len(transformations)
-    cols = 3
-    rows = (n + cols - 1) // cols  # Ceiling division
+    Save all transformed images to the output directory.
     
-    plt.figure(figsize=(15, 4 * rows))
-    plt.suptitle(title, fontsize=16)
-    
-    for i, (name, img) in enumerate(transformations.items()):
-        plt.subplot(rows, cols, i + 1)
-        
-        # Handle grayscale images
-        if len(img.shape) == 2:
-            plt.imshow(img, cmap='gray')
-        else:
-            plt.imshow(img)
-            
-        # Format title as "Figure IV.N: Name"
-        plt.title(f"Figure IV.{i+1}: {name.replace('_', ' ').capitalize()}")
-        plt.axis('on')  # Show axes for better visualization
-    
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.95)  # Adjust for title
-    plt.show()
-
-def save_transformations(transformations: Dict[str, np.ndarray], output_dir: str, filename: str) -> None:
+    Args:
+        transformed_images: Dictionary with transformation names as keys and images as values
+        original_image_path: Path to the original image
+        output_dir: Directory to save transformed images
     """
-    Save transformed images to the output directory.
-    """
-    # Create output directory if it doesn't exist
+    # Get the filename without extension
+    basename = os.path.basename(original_image_path)
+    name, ext = os.path.splitext(basename)
+    
+    # Extract source directory information with improved function
+    source_dir = extract_source_category(original_image_path)
+    
+    print(f"{GREEN}Saving transformed images to: {output_dir}{NC}")
     os.makedirs(output_dir, exist_ok=True)
     
-    # Print output directory similar to augmentation.py
-    print(f"Output directory: {output_dir}")
-    print(f"Saving transformed images to: {output_dir}")
-    
-    for name, img in transformations.items():
-        # Convert back to BGR for saving (OpenCV uses BGR)
-        if name != 'grayscale' and len(img.shape) == 3:
-            img_to_save = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+    # Skip the original image when saving
+    for transform_name, image in transformed_images.items():
+        if transform_name == "Original":
+            continue
+            
+        # Construct the new filename with the transformation type and source info
+        new_filename = os.path.join(output_dir, f"{name}_{source_dir}_{transform_name.lower()}{ext}")
+        
+        # Save the image
+        success = cv2.imwrite(new_filename, image)
+        if success:
+            print(f"Saved: {os.path.basename(new_filename)}")
         else:
-            img_to_save = img
-        
-        # Always use lowercase .jpg extension
-        output_path = os.path.join(output_dir, f"{filename}_{name}.jpg")
-        cv2.imwrite(output_path, img_to_save)
-        print(f"Saved: {filename}_{name}.jpg")
+            print(f"{RED}Failed to save:{NC} {os.path.basename(new_filename)}")
 
-def plot_transformations(transformations: Dict[str, np.ndarray], image_path: str) -> str:
-    """
-    Generate a plot with all transformations and save it.
-    Similar to plot_images from Augmentation.py but with added axes and scales.
-    """
-    # Convert from BGR to RGB for display with matplotlib
-    rgb_images = {}
-    for name, img in transformations.items():
-        if len(img.shape) == 2:  # Grayscale image
-            rgb_img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
-        else:  # Already RGB
-            rgb_img = img
-        rgb_images[name] = rgb_img
-    
-    # Calculate rows and columns dynamically
-    n = len(transformations)
-    cols = 3
-    rows = (n + cols - 1) // cols  # Ceiling division
-    
-    # Create a figure of appropriate size - with more padding at the top for title
-    fig, axes = plt.subplots(rows, cols, figsize=(15, 5 * rows))
-    
-    # Handle the case of a single row or column
-    if rows == 1 and cols == 1:
-        axes = np.array([axes])
-    elif rows == 1 or cols == 1:
-        axes = axes.reshape(-1)
-    
-    # Fill the subplots with images and add scales
-    for i, (name, img) in enumerate(rgb_images.items()):
-        row, col = divmod(i, cols)
-        if rows > 1 and cols > 1:
-            ax = axes[row, col]
-        else:
-            ax = axes[i]
-        
-        # Display image with scales
-        im = ax.imshow(img)
-        
-        # Add title for each subplot but move it slightly higher
-        ax.set_title(name.capitalize(), fontsize=12, pad=10)
-        
-        # Show axes with scales (like in Image 1)
-        ax.axis('on')
-        
-        # Add grid for better visibility of scales
-        ax.grid(False)  # Disable grid for cleaner look
-        
-        # Set ticks for better scale reading
-        height, width = img.shape[:2]
-        # Set x-ticks at every 50 pixels
-        x_ticks = np.arange(0, width, 50)
-        ax.set_xticks(x_ticks)
-        
-        # Set y-ticks at every 50 pixels
-        y_ticks = np.arange(0, height, 50)
-        ax.set_yticks(y_ticks)
-    
-    # Hide any empty subplots
-    for i in range(len(transformations), rows * cols):
-        row, col = divmod(i, cols)
-        if rows > 1 and cols > 1:
-            axes[row, col].axis('off')
-        elif i < len(axes):
-            axes[i].axis('off')
-    
-    # Add a main title with more spacing to avoid overlap with subplot titles
-    plt.suptitle(f'Transformations: {os.path.basename(image_path)}', 
-                fontsize=20, 
-                y=0.98)  # Position title higher to avoid overlap
-    
-    # Adjust layout with more top padding
-    plt.tight_layout()
-    plt.subplots_adjust(top=0.93)  # Increase top margin to avoid overlap
-    
-    # Create plots directory if it doesn't exist
-    plots_dir = os.path.abspath("./plots")
-    os.makedirs(plots_dir, exist_ok=True)
-    
-    # Generate filename for the plot
-    base_name = os.path.splitext(os.path.basename(image_path))[0]
-    plot_filename = os.path.join(plots_dir, f"transformation_{base_name}.png")
-    
-    # Save the figure
-    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
-    print(f"✅ Plot saved to: {plot_filename}")
-    
-    # Display the plot
-    plt.show()
-    
-    return plot_filename
-
-def transform_image(image_path: str, output_dir: str, options: Dict[str, bool]) -> None:
-    """
-    Apply transformations to a single image and generate a plot.
-    """
-    try:
-        # Get the base name of the image (preserving original name)
-        filename = os.path.splitext(os.path.basename(image_path))[0]
-        
-        # Create a subdirectory for this image - fix the directory structure
-        img_output_dir = os.path.join(output_dir, filename)
-        os.makedirs(img_output_dir, exist_ok=True)
-        
-        # Load the image and apply transformations
-        image = load_image(image_path)
-        transformations = apply_transformations(image, options)
-        
-        # Save the transformed images directly to the image's subdirectory
-        save_transformations(transformations, img_output_dir, filename)
-        
-        # Generate and save the plot with all transformations
-        plot_filename = plot_transformations(transformations, image_path)
-        
-        print(f"{GREEN}Processed:{NC} {os.path.basename(image_path)}")
-        print(f"All transformations saved to: {img_output_dir}")
-        
-        print(f"✅ Processing completed successfully for {os.path.basename(image_path)}")
-        print(f"Results saved to: {img_output_dir}")
-    except Exception as e:
-        print(f"{RED}Error processing {image_path}:{NC} {e}")
-
-def transform_directory(directory_path: str, output_dir: str, options: Dict[str, bool]) -> None:
-    # Get list of image files in the directory
-    valid_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff']
-    image_files = []
-    
-    for ext in valid_extensions:
-        image_files.extend(list(Path(directory_path).glob(f"*{ext}")))
-        image_files.extend(list(Path(directory_path).glob(f"*{ext.upper()}")))
-    
-    if not image_files:
-        print(f"{YELLOW}No image files found in {directory_path}{NC}")
-        return
-    
-    print(f"{BLUE}Found {len(image_files)} image files. Processing...{NC}")
-    
-    # Process each image
-    for image_path in image_files:
-        transform_image(str(image_path), output_dir, options)
-    
-    print(f"\n{GREEN}All transformations saved to:{NC} {output_dir}")
 
 def main():
-    # path: path of the directory to transform
-    # dest: destination path, where the transformations will be saved
-    # options: which transformations to apply
-    path, dest, options = parse_arguments()
+    # Parse arguments
+    image_path, output_dir, options = parse_arguments()
     
-    if os.path.isfile(path):
-        transform_image(path, dest, options)
-    elif os.path.isdir(path):
-        transform_directory(path, dest, options)
-    else:
-        raise Exception(f"{RED}The path is not a file or a directory:{NC} {path}")
+    try:
+        # Load the original image
+        original_image = load_image(image_path)
+        
+        # Dictionary to store all transformed images
+        transformed_images = {"Original": original_image}
+        
+        # Create a mask for advanced transformations
+        mask = None
+        if options['mask'] or options['roi'] or options['analyze'] or options['landmarks']:
+            mask = create_leaf_mask(original_image)
+            # Convert mask to BGR for visualization
+            mask_visual = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
+            transformed_images["Mask"] = mask_visual
+        
+        # Apply transformations based on options
+        if options['grayscale']:
+            gray = convert_to_grayscale(original_image)
+            # Convert back to BGR for consistent processing
+            if len(gray.shape) == 2:
+                gray_visual = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+            else:
+                gray_visual = gray
+            transformed_images["Grayscale"] = gray_visual
+        
+        if options['edges']:
+            edges = apply_edge_detection(original_image)
+            transformed_images["Edges"] = edges
+        
+        if options['blur']:
+            blurred = apply_gaussian_blur(original_image)
+            transformed_images["Blur"] = blurred
+        
+        if options['sharpen']:
+            sharpened = sharpen_image(original_image)
+            transformed_images["Sharpen"] = sharpened
+        
+        if options['binary']:
+            binary = convert_to_binary(original_image)
+            transformed_images["Binary"] = binary
+        
+        if options['contrast']:
+            contrast = enhance_contrast(original_image)
+            transformed_images["Contrast"] = contrast
+        
+        if options['roi'] and mask is not None:
+            roi = generate_roi_objects(original_image, mask)
+            transformed_images["ROI"] = roi
+        
+        if options['analyze'] and mask is not None:
+            analyzed = analyze_leaf_object(original_image, mask)
+            transformed_images["Analyzed"] = analyzed
+        
+        if options['landmarks'] and mask is not None:
+            landmarks = generate_pseudolandmarks(original_image, mask)
+            transformed_images["Landmarks"] = landmarks
+        
+        # Save transformed images
+        save_transformed_images(transformed_images, image_path, output_dir)
+        
+        # Extract source directory information for title
+        from utils.utils import extract_source_category
+        source_dir = extract_source_category(image_path)
+        
+        # Get base name without extension
+        base_filename = os.path.splitext(os.path.basename(image_path))[0]
+        
+        # Create custom title with directory path format, without the "from repo" part
+        custom_title = f"Transformation: {base_filename} (./{source_dir})"
+        
+        # Generate plot
+        plot_filename = plot_image_set(
+            transformed_images,
+            image_path,
+            title_prefix="transformation_",
+            max_cols=3,
+            custom_title=custom_title
+        )
+        
+        print(f"✅ Successfully transformed image: {os.path.basename(image_path)}")
+        print(f"✅ Plot saved to: {plot_filename}")
+        
+        return 0
+    
+    except Exception as e:
+        print(f"{RED}Error:{NC} {e}")
+        return 1
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(f"\n{YELLOW}Program interrupted by user.{NC}")
-        sys.exit(0)
-    except Exception as error:
-        print(f"{RED}Error:{NC} {error}")
-        sys.exit(1)
+    sys.exit(main())
