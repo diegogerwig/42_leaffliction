@@ -11,6 +11,8 @@ seaborn==0.13.2           # Visualización estadística avanzada
 scikit-learn==1.4.0       # Algoritmos y herramientas de machine learning
 imbalanced-learn==0.12.0  # Manejo de datasets con clases desbalanceadas
 joblib==1.3.2             # Paralelización y persistencia (caching) para ML
+tensorflow==2.15.0        # Deep learning framework
+keras==2.15.0             # High-level neural networks API
 
 # 🛠️ Herramientas de Desarrollo
 jupyter==1.0.0            # Notebooks interactivos para desarrollo y visualización
@@ -18,6 +20,11 @@ jupyter==1.0.0            # Notebooks interactivos para desarrollo y visualizaci
 # 📦 Otros
 flake8==7.0.0             # Herramienta de análisis estático de código
 
-# 🖼️ Image Processing (needed for Augmentation.py)
+# 🖼️ Image Processing
 opencv-python>=4.5.5      # Computer vision and image processing
 pyfiglet>=0.8.post1       # ASCII text banners for CLI
+
+# 🔧 System Tools
+tqdm>=4.64.0              # Progress bars for loops and processes
+# webbrowser>=0              # For opening HTML results in browser
+pathlib>=1.0.1            # Object-oriented filesystem paths
