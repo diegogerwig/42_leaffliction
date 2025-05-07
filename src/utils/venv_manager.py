@@ -123,6 +123,8 @@ def clean_directories(project_dir):
         os.path.join(project_dir, "plots"),
         os.path.join(project_dir, "images_augmented"),
         os.path.join(project_dir, "images_transformed"),
+        # os.path.join(project_dir, "temp_data"),
+        os.path.join(project_dir, "temp_train_data"),
     ]
     
     for dir_path in dirs_to_clean:
@@ -136,23 +138,41 @@ def clean_directories(project_dir):
             continue
             
         cleaned = 0
-        for item in os.listdir(dir_path):
-            item_path = os.path.join(dir_path, item)
-            # Skip .gitkeep files
-            if item == ".gitkeep":
-                continue
-                
-            try:
-                if os.path.isfile(item_path):
-                    os.unlink(item_path)
+        # Modified part: Use os.walk to recursively go through all subdirectories
+        for root, dirs, files in os.walk(dir_path, topdown=False):
+            for name in files:
+                # Skip .gitkeep files
+                if name == ".gitkeep":
+                    continue
+                    
+                file_path = os.path.join(root, name)
+                try:
+                    os.unlink(file_path)
                     cleaned += 1
-                elif os.path.isdir(item_path):
-                    shutil.rmtree(item_path)
-                    cleaned += 1
-            except Exception as e:
-                print_colored(f"⚠️ Failed to remove {item_path}: {e}", YELLOW)
+                except Exception as e:
+                    print_colored(f"⚠️ Failed to remove file {file_path}: {e}", YELLOW)
+            
+            for name in dirs:
+                dir_to_remove = os.path.join(root, name)
+                try:
+                    # Check if there's a .gitkeep file in this directory
+                    gitkeep_in_subdir = os.path.join(dir_to_remove, ".gitkeep")
+                    if os.path.exists(gitkeep_in_subdir):
+                        # If .gitkeep exists, just remove all other files
+                        for item in os.listdir(dir_to_remove):
+                            if item != ".gitkeep":
+                                item_path = os.path.join(dir_to_remove, item)
+                                if os.path.isfile(item_path):
+                                    os.unlink(item_path)
+                                    cleaned += 1
+                    else:
+                        # If no .gitkeep, remove the entire directory
+                        shutil.rmtree(dir_to_remove)
+                        cleaned += 1
+                except Exception as e:
+                    print_colored(f"⚠️ Failed to remove directory {dir_to_remove}: {e}", YELLOW)
         
-        # Create .gitkeep if it doesn't exist
+        # Ensure there's a .gitkeep file in the main directory
         gitkeep_path = os.path.join(dir_path, ".gitkeep")
         if not os.path.exists(gitkeep_path):
             with open(gitkeep_path, 'w') as f:

@@ -32,6 +32,7 @@ def parse_arguments():
     parser.add_argument('--batch_size', type=int, default=32, help='Batch size for training')
     parser.add_argument('--validation_split', type=float, default=0.2, help='Fraction of data to use for validation')
     parser.add_argument('--output', type=str, default='leaffliction_model', help='Output zip file name without extension')
+    parser.add_argument('--use_tqdm', type=str, default='False', help='Use tqdm for progress display')
     
     return parser.parse_args()
 
@@ -84,7 +85,7 @@ def split_data(base_dir, train_dir, val_dir, validation_split=0.2):
         
         for img in val_images:
             shutil.copy(
-                os.path.join(class_dir, class_name, img),
+                os.path.join(class_dir, img),  # Corregido: Eliminado el class_name duplicado
                 os.path.join(val_dir, class_name, img)
             )
     
@@ -202,7 +203,7 @@ def create_model(input_shape, num_classes):
     
     return model
 
-def train_model(model, train_dir, val_dir, epochs=50, batch_size=32):
+def train_model(model, train_dir, val_dir, epochs=50, batch_size=32, use_tqdm='False'):
     """Train the model using the prepared datasets."""
     # Create data generators with data augmentation for training
     train_datagen = ImageDataGenerator(
@@ -241,17 +242,88 @@ def train_model(model, train_dir, val_dir, epochs=50, batch_size=32):
         restore_best_weights=True
     )
     
+    # Calculate steps per epoch for tqdm
+    steps_per_epoch = len(train_generator)
+    validation_steps = len(val_generator)
+    
+    # Determine if we should use tqdm
+    use_tqdm_progress = use_tqdm.lower() == 'true'
+    
+    if use_tqdm_progress:
+        try:
+            from tqdm import tqdm
+            import tensorflow as tf
+            from tensorflow import keras
+            
+            # Custom callback for tqdm progress bar
+            class TQDMProgressBar(keras.callbacks.Callback):
+                def on_train_begin(self, logs=None):
+                    print("Training started...")
+                    
+                def on_epoch_begin(self, epoch, logs=None):
+                    print(f"\nEpoch {epoch+1}/{epochs}")
+                    self.train_progbar = tqdm(total=steps_per_epoch, desc="Training", 
+                                            position=0, leave=True, 
+                                            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]')
+                    
+                def on_train_batch_end(self, batch, logs=None):
+                    # Update the progress bar with batch metrics
+                    self.train_progbar.update(1)
+                    self.train_progbar.set_postfix({
+                        'loss': f"{logs.get('loss', 0):.4f}",
+                        'acc': f"{logs.get('accuracy', 0):.4f}"
+                    })
+                    
+                def on_epoch_end(self, epoch, logs=None):
+                    # Close the progress bar
+                    self.train_progbar.close()
+                    
+                    # Print epoch results
+                    print(f"Epoch {epoch+1}/{epochs} - loss: {logs.get('loss', 0):.4f} - "
+                          f"accuracy: {logs.get('accuracy', 0):.4f} - "
+                          f"val_loss: {logs.get('val_loss', 0):.4f} - "
+                          f"val_accuracy: {logs.get('val_accuracy', 0):.4f}")
+                    
+                    # Check validation set size and accuracy
+                    if logs.get('val_accuracy', 0) < 0.90:
+                        print("Warning: Validation accuracy is below 90%. Project requires at least 90% accuracy.")
+                    
+                def on_train_end(self, logs=None):
+                    print("\nTraining completed!")
+            
+            # Use our custom callback
+            callbacks = [early_stopping, TQDMProgressBar()]
+            verbose_mode = 0  # Suppress default progress bar
+        except ImportError:
+            print("Warning: tqdm package not found. Using default progress display.")
+            callbacks = [early_stopping]
+            verbose_mode = 1  # Use default progress bar
+    else:
+        callbacks = [early_stopping]
+        verbose_mode = 1  # Use default progress bar
+    
     # Train the model
     history = model.fit(
         train_generator,
+        steps_per_epoch=steps_per_epoch,
         epochs=epochs,
         validation_data=val_generator,
-        callbacks=[early_stopping]
+        validation_steps=validation_steps,
+        callbacks=callbacks,
+        verbose=verbose_mode
     )
     
     # Create class mapping
     class_indices = train_generator.class_indices
     class_mapping = {v: k for k, v in class_indices.items()}
+    
+    # Check the validation set size
+    val_count = 0
+    for _, _, files in os.walk(val_dir):
+        val_count += len([f for f in files if f.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'))])
+    
+    if val_count < 100:
+        print(f"Warning: Validation set contains only {val_count} images. Project requires at least 100 validation images.")
     
     return history, class_mapping
 
@@ -426,7 +498,8 @@ def main():
     history, class_mapping = train_model(
         model, augmented_dir, val_dir, 
         epochs=args.epochs, 
-        batch_size=args.batch_size
+        batch_size=args.batch_size,
+        use_tqdm=args.use_tqdm
     )
     
     # Evaluate the model

@@ -4,6 +4,7 @@ import sys
 import subprocess
 import time
 import threading
+import shutil
 from pathlib import Path
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -445,8 +446,8 @@ def run_model_training(config, project_dir):
         print_colored("\nNo class subdirectories found in the images directory.", RED)
         print_colored("Please organize your images into class subdirectories and try again.", YELLOW)
         print_colored("Example structure:", YELLOW)
-        print_colored("  ./images/Apple/apple_healthy", YELLOW)
-        print_colored("  ./images/Apple/apple_black_rot", YELLOW)
+        print_colored("  ./images/Apple_healthy", YELLOW)
+        print_colored("  ./images/Apple_black_rot", YELLOW)
         return False
     
     # Display available plant categories
@@ -461,19 +462,26 @@ def run_model_training(config, project_dir):
         
         print(f"  {i+1}. {subdir} ({image_count} images)")
     
-    # Ask user for which plant category to train on
+    # Ask user for which plant category to train on - FIXED INPUT HANDLING
     print_colored("\nEnter the plant category to train on (or press ENTER to select all):", GREEN)
     category_input = input().strip()
     
-    # Determine the target directory for training
-    if not category_input:
+    # Create a temporary directory for training with correct structure
+    temp_train_dir = os.path.join(project_dir, "temp_train_data")
+    if os.path.exists(temp_train_dir):
+        shutil.rmtree(temp_train_dir)
+    os.makedirs(temp_train_dir, exist_ok=True)
+    
+    # Determine which subdirectories to include - IMPROVED EMPTY INPUT HANDLING
+    selected_subdirs = []
+    if not category_input:  # FIXED: Explícitamente maneja input vacío
+        selected_subdirs = subdirs.copy()  # Usa .copy() para evitar problemas de referencia
         print_colored("Training on all available categories...", GREEN)
-        target_dirs = [os.path.join(images_dir, subdir) for subdir in subdirs]
     else:
         try:
             index = int(category_input) - 1
             if 0 <= index < len(subdirs):
-                target_dirs = [os.path.join(images_dir, subdirs[index])]
+                selected_subdirs = [subdirs[index]]
                 print_colored(f"Training on category: {subdirs[index]}", GREEN)
             else:
                 print_colored(f"Invalid selection. Please enter a number between 1 and {len(subdirs)}.", RED)
@@ -481,11 +489,40 @@ def run_model_training(config, project_dir):
         except ValueError:
             # Try to match by name
             if category_input in subdirs:
-                target_dirs = [os.path.join(images_dir, category_input)]
+                selected_subdirs = [category_input]
                 print_colored(f"Training on category: {category_input}", GREEN)
             else:
                 print_colored(f"Invalid category name: {category_input}", RED)
                 return False
+    
+    # VERIFY selection was successful
+    if not selected_subdirs:
+        print_colored("Error: No categories selected for training.", RED)
+        return False
+    
+    # Copy selected directories to temp directory with proper structure
+    print_colored("Preparing dataset...", BLUE)
+    for subdir in selected_subdirs:
+        src_dir = os.path.join(images_dir, subdir)
+        dst_dir = os.path.join(temp_train_dir, subdir)
+        
+        # Create destination directory
+        os.makedirs(dst_dir, exist_ok=True)
+        
+        # Copy all images from source to destination
+        img_count = 0
+        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+        for file in os.listdir(src_dir):
+            if file.lower().endswith(valid_extensions):
+                # Full paths for source and destination
+                src_file = os.path.join(src_dir, file)
+                dst_file = os.path.join(dst_dir, file)
+                
+                # Copy the file
+                shutil.copy2(src_file, dst_file)
+                img_count += 1
+        
+        print_colored(f"  Copied {img_count} images for {subdir}", GREEN)
     
     # Ask for the output model name
     print_colored("\nEnter the output model name (without .zip extension) or press ENTER for default:", GREEN)
@@ -493,15 +530,14 @@ def run_model_training(config, project_dir):
     if not model_name:
         model_name = "leaffliction_model"
     
-    # Set up the command
-    command = [python_exe, training_script]
-    
-    # Add all target directories to command
-    for target_dir in target_dirs:
-        command.append(target_dir)
+    # Set up the command with a single directory argument
+    command = [python_exe, training_script, temp_train_dir]
     
     # Add the output model name
     command.extend(["--output", model_name])
+    
+    # Add tqdm for progress tracking - COMMENT THIS IF TQDM CAUSES ISSUES
+    command.extend(["--use_tqdm", "True"])
     
     # Ask for training parameters
     print_colored("\nTraining Parameters:", BLUE)
@@ -550,15 +586,6 @@ def run_model_training(config, project_dir):
     print_colored(f"Command: {' '.join(command)}", YELLOW)
     
     try:
-        # Create a progress spinner
-        stop_event = threading.Event()
-        progress_thread = threading.Thread(
-            target=run_progress_spinner, 
-            args=("Training model, please wait...", stop_event)
-        )
-        progress_thread.daemon = True
-        progress_thread.start()
-        
         # Run the process
         process = subprocess.Popen(
             command,
@@ -568,30 +595,14 @@ def run_model_training(config, project_dir):
             bufsize=1
         )
         
-        # Process the output
+        # Process the output in real-time
         for line in iter(process.stdout.readline, ''):
-            stop_event.set()
-            progress_thread.join(0.2)
-            
             print(line.rstrip())
-            
-            # Create a new progress spinner
-            stop_event = threading.Event()
-            progress_thread = threading.Thread(
-                target=run_progress_spinner, 
-                args=("Training in progress...", stop_event)
-            )
-            progress_thread.daemon = True
-            progress_thread.start()
         
-        # Stop the spinner
-        stop_event.set()
-        if progress_thread.is_alive():
-            progress_thread.join(0.2)
-        
-        # Check process result
+        # Wait for process to complete
         process.wait()
         
+        # Check for errors
         if process.returncode != 0:
             stderr = process.stderr.read()
             print_colored("Error running train.py:", RED)
@@ -600,19 +611,37 @@ def run_model_training(config, project_dir):
                 "\ntrain.py failed to run. Check if all dependencies are installed.",
                 RED
             )
+            # Clean up temp directory
+            if os.path.exists(temp_train_dir):
+                shutil.rmtree(temp_train_dir)
             return False
         
         print_colored("\nModel training completed successfully!", GREEN)
+        
+        # Clean up temp directory
+        if os.path.exists(temp_train_dir):
+            shutil.rmtree(temp_train_dir)
+            
         return True
     
-    except Exception as e:
-        # Stop the spinner thread if there's an exception
-        stop_event.set()
-        if 'progress_thread' in locals() and progress_thread.is_alive():
-            progress_thread.join(0.2)
+    except KeyboardInterrupt:
+        print_colored("\nTraining interrupted by user.", YELLOW)
         
-        print_colored(f"Error: {e}", RED)
+        # Clean up temp directory
+        if os.path.exists(temp_train_dir):
+            shutil.rmtree(temp_train_dir)
+            
         return False
+        
+    except Exception as e:
+        print_colored(f"Error: {e}", RED)
+        
+        # Clean up temp directory
+        if os.path.exists(temp_train_dir):
+            shutil.rmtree(temp_train_dir)
+            
+        return False
+
 
 def run_visualize_augmentation(config, project_dir):
     """Run the visualization of augmented images."""

@@ -26,5 +26,4 @@ pyfiglet>=0.8.post1       # ASCII text banners for CLI
 
 # 🔧 System Tools
 tqdm>=4.64.0              # Progress bars for loops and processes
-# webbrowser>=0              # For opening HTML results in browser
 pathlib>=1.0.1            # Object-oriented filesystem paths
