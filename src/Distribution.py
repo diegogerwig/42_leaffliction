@@ -227,14 +227,14 @@ def main():
     # Dictionary with the name of the directory as key and the number of files
     # in the directory as value
     data = count_files(target_dir)
-    
+
     if not data:
         print_colored("No files found in subdirectories.", YELLOW)
-    
+
     # Create plots
     bar_result = plot_bar(data, target_dir, plots_dir)
     pie_result = plot_pie(data, target_dir, plots_dir)
-    
+
     if bar_result and pie_result:
         return True
     else:

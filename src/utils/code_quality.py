@@ -8,53 +8,49 @@ from collections import defaultdict
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.utils import (  # noqa: E402
-    print_colored, run_command, SPINNER_CHARS,
+    print_colored, run_command, run_progress_spinner,
+    SPINNER_CHARS,
     GREEN, BLUE, RED, YELLOW, CYAN, NC
 )
 
 
-def start_spinner():
+def start_spinner(message="Analyzing files with flake8..."):
     """
     Start a spinner animation in a separate thread.
     
+    Args:
+        message: Text message to display alongside the spinner
+    
     Returns:
-        tuple: (stop_spinner_flag, spinner_thread) - use the flag to stop the spinner
+        tuple: (stop_event, spinner_thread) - use the event to stop the spinner
     """
-    stop_spinner = False
+    stop_event = threading.Event()
     
-    def run_spinner():
-        """Run a spinner animation in the terminal."""
-        i = 0
-        while not stop_spinner:
-            spinner_char = SPINNER_CHARS[i % len(SPINNER_CHARS)]
-            print(
-                f"\r{CYAN}Working... {spinner_char}{NC}",
-                end=""
-            )
-            i += 1
-            time.sleep(0.1)
-    
-    spinner_thread = threading.Thread(target=run_spinner)
+    spinner_thread = threading.Thread(
+        target=run_progress_spinner,
+        args=(message, stop_event)
+    )
     spinner_thread.daemon = True
     spinner_thread.start()
     
-    return stop_spinner, spinner_thread
+    return stop_event, spinner_thread
 
 
-def stop_spinner(stop_spinner_flag, spinner_thread):
+def stop_spinner(stop_event, spinner_thread):
     """
     Stop a running spinner animation.
     
     Args:
-        stop_spinner_flag: Flag to stop the spinner
+        stop_event: Event to signal stopping the spinner
         spinner_thread: The thread running the spinner
     """
-    stop_spinner_flag = True
+    stop_event.set()
     spinner_thread.join(0.2)
     print("\r" + " " * 50 + "\r", end="")  # Clear the spinner line
 
 
-def parse_flake8_output(output, project_dir, file_issues, file_issue_types, issue_type_counts, filter_code=None):
+def parse_flake8_output(output, project_dir, file_issues, file_issue_types,
+                        issue_type_counts, filter_code=None):
     """
     Parse flake8 output and update issue tracking data structures.
     
@@ -83,7 +79,7 @@ def parse_flake8_output(output, project_dir, file_issues, file_issue_types, issu
                     # Skip if we're filtering for a specific code
                     if filter_code and issue_code != filter_code:
                         continue
-                        
+                    
                     # Get the relative path or basename
                     file_name = os.path.relpath(file_path, project_dir)
                     
@@ -96,7 +92,7 @@ def parse_flake8_output(output, project_dir, file_issues, file_issue_types, issu
                     file_issue_types[file_name][issue_code] += 1
                     issue_type_counts[issue_code] += 1
                     issues_found += 1
-                    
+    
     return issues_found
 
 
@@ -119,7 +115,7 @@ def run_flake8(config, project_dir, verbose=False):
     required_keys = ['use_conda', 'pip_bin']
     if config['use_conda']:
         required_keys.append('env_path')
-        
+    
     for key in required_keys:
         if key not in config:
             print_colored(f"Error: Missing required config key '{key}'", RED)
@@ -140,7 +136,7 @@ def run_flake8(config, project_dir, verbose=False):
 
     # Get list of Python files in the project
     print_colored(f"Scanning Python files in {project_dir}...", GREEN)
-    stop_flag, spinner = start_spinner()
+    stop_event, spinner = start_spinner()
     
     find_py_files_cmd = f"find {project_dir} -name '*.py'"
     py_files_result = run_command(
@@ -166,18 +162,18 @@ def run_flake8(config, project_dir, verbose=False):
         lines_count = int(lines_count_result.stdout.strip())
     else:
         lines_count = 0
-        
-    stop_spinner(stop_flag, spinner)
+    
+    stop_spinner(stop_event, spinner)
 
     # Data structures to store issue statistics
-    file_issues = {}             # Total issues per file
-    file_issue_types = defaultdict(lambda: defaultdict(int))  # Issue types per file
+    file_issues = {}  # Total issues per file
+    file_issue_types = defaultdict(lambda: defaultdict(int))  # Issues per file
     issue_type_counts = defaultdict(int)  # Total counts per issue type
     total_issues = 0
 
     # Run standard flake8 check first (excluding E501)
     print_colored("\nRunning flake8 code style check...", BLUE)
-    stop_flag, spinner = start_spinner()
+    stop_event, spinner = start_spinner()
     
     format_str = "%(path)s:%(row)d:%(col)d: %(code)s %(text)s"
     
@@ -195,13 +191,13 @@ def run_flake8(config, project_dir, verbose=False):
         detailed_cmd, shell=True, capture_output=True
     )
     
-    stop_spinner(stop_flag, spinner)
+    stop_spinner(stop_event, spinner)
 
     if detailed_result and detailed_result.stdout:
         if verbose:
             print_colored("\nRaw flake8 output:", CYAN)
             print(detailed_result.stdout)
-            
+        
         # Parse general flake8 output
         issues = parse_flake8_output(
             detailed_result.stdout, 
@@ -212,9 +208,9 @@ def run_flake8(config, project_dir, verbose=False):
         )
         total_issues += issues
     
-    # Now run a separate check specifically for E501 (line too long) errors
+    # Now run a separate check for E501 (line too long) errors
     print_colored("\nChecking for line length (E501) issues...", BLUE)
-    stop_flag, spinner = start_spinner()
+    stop_event, spinner = start_spinner()
     
     # Run flake8 with only E501 enabled - using double quotes for format
     e501_cmd = (
@@ -225,18 +221,18 @@ def run_flake8(config, project_dir, verbose=False):
     
     if verbose:
         print_colored(f"Running E501 command: {e501_cmd}", CYAN)
-        
+    
     e501_result = run_command(
         e501_cmd, shell=True, capture_output=True
     )
     
-    stop_spinner(stop_flag, spinner)
+    stop_spinner(stop_event, spinner)
     
     if e501_result and e501_result.stdout:
         if verbose:
             print_colored("\nRaw E501 output:", CYAN)
             print(e501_result.stdout)
-            
+        
         # Parse E501 flake8 output
         e501_issues = parse_flake8_output(
             e501_result.stdout, 
@@ -261,7 +257,7 @@ def run_flake8(config, project_dir, verbose=False):
         # Determine if there are critical issues (errors vs warnings)
         has_critical_issues = any(
             count > 0 for code, count in issue_type_counts.items() 
-            if code.startswith(('E', 'F')) and code != 'E501'  # E501 is not critical
+            if code.startswith(('E', 'F')) and code != 'E501'  # E501 not critical
         )
         
         error_color = RED if has_critical_issues else GREEN
@@ -288,31 +284,37 @@ def run_flake8(config, project_dir, verbose=False):
 
         # Display issues per file
         print_colored("\n📋 Issues per file:", BLUE)
+        
+        # Create a dictionary with all Python files found and set issues to 0 if not in file_issues
+        all_files = {}
+        for file_path in python_files:
+            file_name = os.path.relpath(file_path, project_dir)
+            if file_name in file_issues:
+                all_files[file_name] = file_issues[file_name]
+            else:
+                all_files[file_name] = 0
+        
+        # Sort by issue count, with files that have issues first
         sorted_files = sorted(
-            file_issues.items(),
-            key=lambda x: x[1],
-            reverse=True
+            all_files.items(),
+            key=lambda x: (x[1] == 0, -x[1])  # First non-zero issues (descending), then zero issues
         )
 
         for file_name, issue_count in sorted_files:
-            color = RED if issue_count > 30 else (YELLOW if issue_count > 0 else GREEN)
+            color = RED if issue_count >= 1 else GREEN
             print_colored(f"   - {file_name}: {issue_count} issues", color)
             
-            # Show breakdown of issue types for each file
+            # Show breakdown of issue types for each file (only for files with issues)
             if issue_count > 0:
                 file_issues_sorted = sorted(
                     file_issue_types[file_name].items(),
                     key=lambda x: x[1],
                     reverse=True
                 )
-                for issue_code, count in file_issues_sorted[:5]:  # Top 5 issues
+                # Show all issues for each file
+                for issue_code, count in file_issues_sorted:
                     code_description = get_error_description(issue_code)
                     print_colored(f"     - {issue_code} ({code_description}): {count}", CYAN)
-                
-                # If there are more than 5 issue types, show a summary
-                if len(file_issues_sorted) > 5:
-                    remaining = sum(count for _, count in file_issues_sorted[5:])
-                    print_colored(f"     - Other issues: {remaining}", CYAN)
     else:
         print_colored("✅ No style issues found", GREEN)
 

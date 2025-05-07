@@ -996,16 +996,26 @@ def run_disease_prediction(config, project_dir):
 
 
 def show_menu(config, project_dir):
+    if 'use_conda' in config:
+        if config['use_conda'] and 'env_path' in config:
+            # For conda environments, derive pip_bin from env_path if not present
+            if 'pip_bin' not in config:
+                config['pip_bin'] = os.path.join(config['env_path'], 'bin', 'pip')
+        else:
+            # For standard venv, make sure pip_bin exists
+            if 'pip_bin' not in config and 'venv_path' in config:
+                config['pip_bin'] = os.path.join(config['venv_path'], 'bin', 'pip')
+
     while True:
         print_colored("\n=== Machine Learning Project Tools ===", BLUE)
-        print_colored("1. Run code quality check (flake8)", GREEN)
-        print_colored("2. Run data distribution analysis", GREEN)
-        print_colored("3. Run image augmentation", GREEN)
-        print_colored("4. Run image transformation", GREEN)
-        print_colored("5. Train leaf disease classification model", GREEN)
-        print_colored("6. Predict disease from leaf image", GREEN)
-        print_colored("7. Visualize image augmentation", GREEN)
-        print_colored("0. Exit", GREEN)
+        print_colored("1. Run code quality check (flake8)", YELLOW)
+        print_colored("2. Run data distribution analysis", YELLOW)
+        print_colored("3. Run image augmentation", YELLOW)
+        print_colored("4. Run image transformation", YELLOW)
+        print_colored("5. Train leaf disease classification model", YELLOW)
+        print_colored("6. Predict disease from leaf image", YELLOW)
+        print_colored("7. Visualize image augmentation", YELLOW)
+        print_colored("0. Exit", RED)
         
         choice = input("\nEnter your choice (0-7): ").strip()
         

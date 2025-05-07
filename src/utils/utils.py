@@ -25,7 +25,8 @@ def run_command(command, shell=False, capture_output=False):
         if shell:
             if capture_output:
                 return subprocess.run(
-                    command, shell=True, check=True, capture_output=True, text=True
+                    command, shell=True, check=True,
+                    capture_output=True, text=True
                 )
             return subprocess.run(command, shell=True, check=True)
         else:
@@ -44,10 +45,12 @@ def run_command(command, shell=False, capture_output=False):
 def run_progress_spinner(message, stop_event):
     i = 0
     steps = 0
-    
+
     while not stop_event.is_set():
         steps_indicator = "." * (steps % 4)
-        print(f"\r{CYAN}{message} {SPINNER_CHARS[i % len(SPINNER_CHARS)]} {steps_indicator:<3}{NC}", end="")
+        print(f"\r{CYAN}{message} "
+              f"{SPINNER_CHARS[i % len(SPINNER_CHARS)]} "
+              f"{steps_indicator:<3}{NC}", end="")
         i += 1
         if i % 10 == 0:
             steps += 1
@@ -59,7 +62,8 @@ def run_progress_spinner(message, stop_event):
 
 def wait_for_confirmation():
     print_colored("\n🏁 Task completed", YELLOW)
-    print_colored("\nPress ENTER to return to main menu or Ctrl+C to exit...", CYAN)
+    message = "\nPress ENTER to return to main menu or Ctrl+C to exit..."
+    print_colored(message, CYAN)
     input()
 
 
@@ -69,12 +73,12 @@ def get_default_images_dir(project_dir):
 
 def extract_source_category(image_path):
     path_parts = os.path.normpath(image_path).split(os.sep)
-    
+
     # Look for exact matches first
     for part in path_parts:
         if part.lower() in ["black", "healthy", "rust"]:
             return part.lower()
-    
+
     # Look for patterns in directory names
     for part in path_parts:
         part_lower = part.lower()
@@ -84,5 +88,5 @@ def extract_source_category(image_path):
             return "healthy"
         elif "rust" in part_lower:
             return "rust"
-    
+
     return "unknown"
