@@ -469,11 +469,33 @@ def run_model_training(config, project_dir):
         
         print(f"  {i+1}. {rel_path} ({image_count} imágenes)")
     
+    # Calculate total number of images
+    total_images = 0
+    for dir_path in image_dirs:
+        for file in os.listdir(dir_path):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
+                total_images += 1
+    
     # Ask how many images to include in the dataset
     print_colored("\n¿Cuántas imágenes quieres incluir en el dataset? (escribe 'all' para todas o un número):", GREEN)
+    print_colored("NOTA: Se recomienda un mínimo de 10 imágenes para garantizar un entrenamiento adecuado.", YELLOW)
     num_images_input = input().strip().lower()
     if not num_images_input:
         num_images_input = 'all'
+    
+    # Validate input
+    if num_images_input != 'all':
+        try:
+            num = int(num_images_input)
+            if num < 10:
+                print_colored("ADVERTENCIA: Has seleccionado menos de 10 imágenes, lo que puede causar problemas durante el entrenamiento.", RED)
+                confirm = input("¿Quieres continuar de todos modos? (y/n): ").strip().lower()
+                if confirm != 'y':
+                    print_colored("Operación cancelada.", YELLOW)
+                    return False
+        except ValueError:
+            print_colored("Número inválido. Se usarán todas las imágenes disponibles.", YELLOW)
+            num_images_input = 'all'
     
     # Ask for output directory
     print_colored("\n¿Dónde quieres guardar el archivo .zip del modelo? (presiona ENTER para usar el directorio raíz del proyecto):", GREEN)

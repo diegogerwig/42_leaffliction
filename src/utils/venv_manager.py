@@ -125,6 +125,7 @@ def clean_directories(project_dir):
         os.path.join(project_dir, "images_transformed"),
         os.path.join(project_dir, "temp_data"),
         os.path.join(project_dir, "temp_train_data"),
+        os.path.join(project_dir, "temp_random_dataset"),
     ]
     
     for dir_path in dirs_to_clean:

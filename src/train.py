@@ -55,6 +55,7 @@ def find_all_image_directories(base_dir):
     
     return image_dirs
 
+
 def create_random_dataset(image_dirs, temp_dir, num_images='all'):
     """Create a dataset with random images from all available directories."""
     # Find all valid images across all directories
@@ -93,6 +94,31 @@ def create_random_dataset(image_dirs, temp_dir, num_images='all'):
             class_counts[source_dir] = 0
         class_counts[source_dir] += 1
     
+    # Ensure minimum images per class
+    min_required = 3  # Minimum images required per class to allow proper splitting
+    valid_dataset = True
+    
+    for class_name, count in class_counts.items():
+        if count < min_required:
+            print_colored(f"Warning: Class {class_name} has only {count} images, which may be too few for training.", YELLOW)
+            if count < 2:
+                valid_dataset = False
+    
+    if not valid_dataset:
+        print_colored("Some classes have too few images. Consider increasing the number of images or using 'all'.", RED)
+        if len(selected_images) < 10 and len(all_images) >= 10:
+            # Automatically adjust to at least 10 images if available
+            new_num = min(10, len(all_images))
+            print_colored(f"Automatically adjusting to {new_num} images to ensure a valid dataset.", YELLOW)
+            selected_images = random.sample(all_images, new_num)
+            
+            # Recount images by class
+            class_counts = {}
+            for _, source_dir in selected_images:
+                if source_dir not in class_counts:
+                    class_counts[source_dir] = 0
+                class_counts[source_dir] += 1
+    
     # Create dataset structure
     os.makedirs(temp_dir, exist_ok=True)
     
@@ -113,6 +139,7 @@ def create_random_dataset(image_dirs, temp_dir, num_images='all'):
         print(f"  {class_name}: {count} images")
     
     return list(class_counts.keys()), len(selected_images)
+
 
 def create_class_directories(base_dir, train_dir, val_dir):
     """Create directories for training and validation datasets."""
@@ -147,8 +174,27 @@ def split_data(base_dir, train_dir, val_dir, validation_split=0.2):
         dataset_info["distribution"][class_name] = len(images)
         dataset_info["total_images"] += len(images)
         
-        # Split images into training and validation sets
-        train_images, val_images = train_test_split(images, test_size=validation_split, random_state=42)
+        # Check if there are enough images for splitting
+        if len(images) <= 1:
+            # If only one image, put it in the training set
+            train_images = images
+            val_images = []
+            print_colored(f"Warning: Class {class_name} has only {len(images)} image(s). All will be used for training.", YELLOW)
+        else:
+            # Determine minimum number of validation images (at least 1)
+            val_count = max(1, int(len(images) * validation_split))
+            # Ensure we have at least 1 image for training too
+            if len(images) - val_count < 1:
+                val_count = len(images) - 1
+            
+            # Shuffle the images
+            random.shuffle(images)
+            
+            # Split manually
+            train_images = images[val_count:]
+            val_images = images[:val_count]
+            
+            print_colored(f"Class {class_name}: {len(train_images)} for training, {len(val_images)} for validation", GREEN)
         
         # Count images in each split
         dataset_info["training_images"] += len(train_images)
