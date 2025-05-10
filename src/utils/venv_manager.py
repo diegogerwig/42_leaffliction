@@ -123,7 +123,7 @@ def clean_directories(project_dir):
         os.path.join(project_dir, "plots"),
         os.path.join(project_dir, "images_augmented"),
         os.path.join(project_dir, "images_transformed"),
-        # os.path.join(project_dir, "temp_data"),
+        os.path.join(project_dir, "temp_data"),
         os.path.join(project_dir, "temp_train_data"),
     ]
     

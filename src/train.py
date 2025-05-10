@@ -16,6 +16,7 @@ import shutil
 import zipfile
 import datetime
 import json
+import random
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,8 +34,85 @@ def parse_arguments():
     parser.add_argument('--validation_split', type=float, default=0.2, help='Fraction of data to use for validation')
     parser.add_argument('--output', type=str, default='leaffliction_model', help='Output zip file name without extension')
     parser.add_argument('--use_tqdm', type=str, default='False', help='Use tqdm for progress display')
+    parser.add_argument('--num_images', type=str, default='all', help='Number of images to include in dataset (all by default)')
+    parser.add_argument('--output_dir', type=str, default='', help='Directory to save the output model zip file')
     
     return parser.parse_args()
+
+def find_all_image_directories(base_dir):
+    """Find all directories containing images in the base directory."""
+    image_dirs = []
+    
+    for root, dirs, files in os.walk(base_dir):
+        has_images = False
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
+                has_images = True
+                break
+        
+        if has_images:
+            image_dirs.append(root)
+    
+    return image_dirs
+
+def create_random_dataset(image_dirs, temp_dir, num_images='all'):
+    """Create a dataset with random images from all available directories."""
+    # Find all valid images across all directories
+    all_images = []
+    for dir_path in image_dirs:
+        for file in os.listdir(dir_path):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
+                source_path = os.path.join(dir_path, file)
+                source_dir = os.path.basename(dir_path)
+                all_images.append((source_path, source_dir))
+    
+    # Determine how many images to use
+    if num_images == 'all':
+        selected_images = all_images
+        print_colored(f"Using all {len(all_images)} images found.", GREEN)
+    else:
+        try:
+            num = int(num_images)
+            if num <= 0:
+                print_colored("Invalid number of images. Using all images.", YELLOW)
+                selected_images = all_images
+            elif num > len(all_images):
+                print_colored(f"Requested {num} images but only {len(all_images)} available. Using all images.", YELLOW)
+                selected_images = all_images
+            else:
+                selected_images = random.sample(all_images, num)
+                print_colored(f"Randomly selected {num} images from {len(all_images)} available.", GREEN)
+        except ValueError:
+            print_colored("Invalid number format. Using all images.", YELLOW)
+            selected_images = all_images
+    
+    # Count images by class
+    class_counts = {}
+    for _, source_dir in selected_images:
+        if source_dir not in class_counts:
+            class_counts[source_dir] = 0
+        class_counts[source_dir] += 1
+    
+    # Create dataset structure
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    # Create class directories
+    for class_name in class_counts.keys():
+        class_dir = os.path.join(temp_dir, class_name)
+        os.makedirs(class_dir, exist_ok=True)
+    
+    # Copy images to their class directories
+    for source_path, source_dir in selected_images:
+        dest_dir = os.path.join(temp_dir, source_dir)
+        dest_path = os.path.join(dest_dir, os.path.basename(source_path))
+        shutil.copy2(source_path, dest_path)
+    
+    # Print dataset statistics
+    print_colored("\nDataset distribution:", GREEN)
+    for class_name, count in class_counts.items():
+        print(f"  {class_name}: {count} images")
+    
+    return list(class_counts.keys()), len(selected_images)
 
 def create_class_directories(base_dir, train_dir, val_dir):
     """Create directories for training and validation datasets."""
@@ -85,7 +163,7 @@ def split_data(base_dir, train_dir, val_dir, validation_split=0.2):
         
         for img in val_images:
             shutil.copy(
-                os.path.join(class_dir, img),  # Corregido: Eliminado el class_name duplicado
+                os.path.join(class_dir, img),
                 os.path.join(val_dir, class_name, img)
             )
     
@@ -361,7 +439,7 @@ def evaluate_model(model, val_dir, batch_size=32):
         'total_predictions': len(true_classes)
     }
 
-def create_zip_archive(model, class_mapping, dataset_info, evaluation_results, model_summary, train_dir, augmented_dir, output_name):
+def create_zip_archive(model, class_mapping, dataset_info, evaluation_results, model_summary, train_dir, augmented_dir, output_name, output_dir=""):
     """Create a zip archive containing the model and augmented images."""
     # Create a temporary directory to store files
     temp_dir = os.path.join(os.getcwd(), 'temp_model_files')
@@ -415,13 +493,18 @@ def create_zip_archive(model, class_mapping, dataset_info, evaluation_results, m
         f.write("## Usage\n")
         f.write("Use `predict.py` to predict diseases from new leaf images.")
     
+    # Determine output directory
+    if output_dir:
+        full_output_dir = os.path.abspath(output_dir)
+    else:
+        full_output_dir = os.getcwd()
+    
     # Create the output directory if it doesn't exist
-    output_dir = os.path.dirname(output_name)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir, exist_ok=True)
+    if not os.path.exists(full_output_dir):
+        os.makedirs(full_output_dir, exist_ok=True)
     
     # Create a zip file with the model files and augmented images
-    output_zip = f"{output_name}.zip"
+    output_zip = os.path.join(full_output_dir, f"{output_name}.zip")
     with zipfile.ZipFile(output_zip, 'w', zipfile.ZIP_DEFLATED) as zipf:
         # Add model files
         for root, _, files in os.walk(temp_dir):
@@ -456,6 +539,38 @@ def main():
         print_colored(f"Error: Directory {input_dir} does not exist!", RED)
         return 1
     
+    # Ask user how many images to include in dataset
+    num_images = args.num_images
+    if num_images == 'all':
+        print_colored("¿Cuántas imágenes quieres incluir en el dataset? (escribe 'all' para todas, o un número):", GREEN)
+        user_input = input().strip()
+        if user_input:
+            num_images = user_input
+    
+    # Create a temporary directory for the random dataset
+    random_dataset_dir = os.path.join(os.getcwd(), 'temp_random_dataset')
+    if os.path.exists(random_dataset_dir):
+        shutil.rmtree(random_dataset_dir)
+    os.makedirs(random_dataset_dir, exist_ok=True)
+    
+    # Find all directories containing images
+    print_colored("Buscando directorios con imágenes...", BLUE)
+    image_dirs = find_all_image_directories(input_dir)
+    
+    if not image_dirs:
+        print_colored(f"Error: No se encontraron directorios con imágenes en {input_dir}!", RED)
+        return 1
+    
+    print_colored(f"Encontrados {len(image_dirs)} directorios con imágenes.", GREEN)
+    
+    # Create a random dataset from the available images
+    print_colored("Creando dataset aleatorio...", BLUE)
+    classes, total_images = create_random_dataset(image_dirs, random_dataset_dir, num_images)
+    
+    if total_images == 0:
+        print_colored("Error: No se incluyeron imágenes en el dataset!", RED)
+        return 1
+    
     # Create directories for training, validation, and augmented data
     temp_base_dir = os.path.join(os.getcwd(), 'temp_data')
     train_dir = os.path.join(temp_base_dir, 'train')
@@ -469,12 +584,12 @@ def main():
         os.makedirs(dir_path, exist_ok=True)
     
     # Create class directories
-    classes = create_class_directories(input_dir, train_dir, val_dir)
+    classes = create_class_directories(random_dataset_dir, train_dir, val_dir)
     print_colored(f"Found {len(classes)} classes: {', '.join(classes)}", GREEN)
     
     # Split data into training and validation sets
     print_colored("Splitting data into training and validation sets...", BLUE)
-    dataset_info = split_data(input_dir, train_dir, val_dir, args.validation_split)
+    dataset_info = split_data(random_dataset_dir, train_dir, val_dir, args.validation_split)
     
     print_colored(f"Total images: {dataset_info['total_images']}", GREEN)
     print_colored(f"Training images: {dataset_info['training_images']}", GREEN)
@@ -483,6 +598,14 @@ def main():
     # Create augmented images
     print_colored("Creating augmented images...", BLUE)
     create_augmented_images(train_dir, augmented_dir)
+    
+    # Ask for output directory
+    output_dir = args.output_dir
+    if not output_dir:
+        print_colored("¿Dónde quieres guardar el archivo .zip del modelo? (presiona ENTER para usar el directorio actual):", GREEN)
+        user_input = input().strip()
+        if user_input:
+            output_dir = user_input
     
     # Create the model
     print_colored("Creating model...", BLUE)
@@ -522,15 +645,18 @@ def main():
         model_summary,
         train_dir, 
         augmented_dir,
-        args.output
+        args.output,
+        output_dir
     )
     
     print_colored(f"Training completed! Files saved to: {output_zip}", GREEN)
     
     # Clean up
     shutil.rmtree(temp_base_dir)
+    shutil.rmtree(random_dataset_dir)
     
     return 0
+
 
 if __name__ == "__main__":
     try:

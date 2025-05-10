@@ -436,114 +436,95 @@ def run_model_training(config, project_dir):
         os.makedirs(images_dir, exist_ok=True)
         print_colored(f"✅ Images directory created: {images_dir}", GREEN)
     
-    # Get subdirectories (possible classes)
-    subdirs = []
-    if os.path.exists(images_dir):
-        subdirs = [d for d in os.listdir(images_dir) 
-                 if os.path.isdir(os.path.join(images_dir, d)) and not d.startswith('.')]
+    # Find all directories with images
+    image_dirs = []
+    for root, dirs, files in os.walk(images_dir):
+        has_images = False
+        for file in files:
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
+                has_images = True
+                break
+        
+        if has_images:
+            image_dirs.append(root)
     
-    if not subdirs:
-        print_colored("\nNo class subdirectories found in the images directory.", RED)
-        print_colored("Please organize your images into class subdirectories and try again.", YELLOW)
-        print_colored("Example structure:", YELLOW)
-        print_colored("  ./images/Apple_healthy", YELLOW)
-        print_colored("  ./images/Apple_black_rot", YELLOW)
+    if not image_dirs:
+        print_colored("\nNo se encontraron imágenes en ningún directorio.", RED)
+        print_colored("Añade algunas imágenes a los directorios e inténtalo de nuevo.", YELLOW)
         return False
     
-    # Display available plant categories
-    print_colored("\nAvailable plant categories:", GREEN)
-    for i, subdir in enumerate(subdirs):
-        # Count images in the subdirectory
+    # Display available image directories
+    print_colored("\nDirectorios con imágenes disponibles:", GREEN)
+    for i, dir_path in enumerate(image_dirs):
+        # Count images in the directory
         image_count = 0
-        for root, _, files in os.walk(os.path.join(images_dir, subdir)):
-            for file in files:
-                if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
-                    image_count += 1
+        for file in os.listdir(dir_path):
+            if file.lower().endswith(('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')):
+                image_count += 1
         
-        print(f"  {i+1}. {subdir} ({image_count} images)")
+        # Get the relative path for display
+        rel_path = os.path.relpath(dir_path, images_dir)
+        if rel_path == '.':
+            rel_path = '(directorio raíz)'
+        
+        print(f"  {i+1}. {rel_path} ({image_count} imágenes)")
     
-    # Ask user for which plant category to train on - FIXED INPUT HANDLING
-    print_colored("\nEnter the plant category to train on (or press ENTER to select all):", GREEN)
-    category_input = input().strip()
+    # Ask how many images to include in the dataset
+    print_colored("\n¿Cuántas imágenes quieres incluir en el dataset? (escribe 'all' para todas o un número):", GREEN)
+    num_images_input = input().strip().lower()
+    if not num_images_input:
+        num_images_input = 'all'
     
-    # Create a temporary directory for training with correct structure
-    temp_train_dir = os.path.join(project_dir, "temp_train_data")
-    if os.path.exists(temp_train_dir):
-        shutil.rmtree(temp_train_dir)
-    os.makedirs(temp_train_dir, exist_ok=True)
+    # Ask for output directory
+    print_colored("\n¿Dónde quieres guardar el archivo .zip del modelo? (presiona ENTER para usar el directorio raíz del proyecto):", GREEN)
+    output_dir_input = input().strip()
     
-    # Determine which subdirectories to include - IMPROVED EMPTY INPUT HANDLING
-    selected_subdirs = []
-    if not category_input:  # FIXED: Explícitamente maneja input vacío
-        selected_subdirs = subdirs.copy()  # Usa .copy() para evitar problemas de referencia
-        print_colored("Training on all available categories...", GREEN)
+    if not output_dir_input:
+        output_dir = project_dir
     else:
-        try:
-            index = int(category_input) - 1
-            if 0 <= index < len(subdirs):
-                selected_subdirs = [subdirs[index]]
-                print_colored(f"Training on category: {subdirs[index]}", GREEN)
-            else:
-                print_colored(f"Invalid selection. Please enter a number between 1 and {len(subdirs)}.", RED)
-                return False
-        except ValueError:
-            # Try to match by name
-            if category_input in subdirs:
-                selected_subdirs = [category_input]
-                print_colored(f"Training on category: {category_input}", GREEN)
-            else:
-                print_colored(f"Invalid category name: {category_input}", RED)
-                return False
+        # Check if it's an absolute path
+        if os.path.isabs(output_dir_input):
+            output_dir = output_dir_input
+        else:
+            # Relative to project directory
+            output_dir = os.path.join(project_dir, output_dir_input)
     
-    # VERIFY selection was successful
-    if not selected_subdirs:
-        print_colored("Error: No categories selected for training.", RED)
-        return False
-    
-    # Copy selected directories to temp directory with proper structure
-    print_colored("Preparing dataset...", BLUE)
-    for subdir in selected_subdirs:
-        src_dir = os.path.join(images_dir, subdir)
-        dst_dir = os.path.join(temp_train_dir, subdir)
-        
-        # Create destination directory
-        os.makedirs(dst_dir, exist_ok=True)
-        
-        # Copy all images from source to destination
-        img_count = 0
-        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
-        for file in os.listdir(src_dir):
-            if file.lower().endswith(valid_extensions):
-                # Full paths for source and destination
-                src_file = os.path.join(src_dir, file)
-                dst_file = os.path.join(dst_dir, file)
-                
-                # Copy the file
-                shutil.copy2(src_file, dst_file)
-                img_count += 1
-        
-        print_colored(f"  Copied {img_count} images for {subdir}", GREEN)
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        create_dir = input(f"El directorio {output_dir} no existe. ¿Crear? (y/n): ").strip().lower()
+        if create_dir == 'y':
+            os.makedirs(output_dir, exist_ok=True)
+            print_colored(f"Directorio creado: {output_dir}", GREEN)
+        else:
+            print_colored("Abortando operación.", RED)
+            return False
     
     # Ask for the output model name
-    print_colored("\nEnter the output model name (without .zip extension) or press ENTER for default:", GREEN)
+    print_colored("\nIntroduce el nombre del modelo de salida (sin extensión .zip) o presiona ENTER para el nombre por defecto:", GREEN)
     model_name = input().strip()
     if not model_name:
         model_name = "leaffliction_model"
     
     # Set up the command with a single directory argument
-    command = [python_exe, training_script, temp_train_dir]
+    command = [python_exe, training_script, images_dir]
+    
+    # Add the number of images option
+    command.extend(["--num_images", num_images_input])
     
     # Add the output model name
     command.extend(["--output", model_name])
     
-    # Add tqdm for progress tracking - COMMENT THIS IF TQDM CAUSES ISSUES
+    # Add the output directory
+    command.extend(["--output_dir", output_dir])
+    
+    # Add tqdm for progress tracking
     command.extend(["--use_tqdm", "True"])
     
     # Ask for training parameters
-    print_colored("\nTraining Parameters:", BLUE)
+    print_colored("\nParámetros de entrenamiento:", BLUE)
     
     # Number of epochs
-    print_colored("Enter the number of training epochs (default: 50):", GREEN)
+    print_colored("Introduce el número de épocas de entrenamiento (por defecto: 50):", GREEN)
     epochs_input = input().strip()
     if epochs_input:
         try:
@@ -551,12 +532,12 @@ def run_model_training(config, project_dir):
             if epochs > 0:
                 command.extend(["--epochs", str(epochs)])
             else:
-                print_colored("Invalid number of epochs. Using default (50).", YELLOW)
+                print_colored("Número de épocas inválido. Usando el valor por defecto (50).", YELLOW)
         except ValueError:
-            print_colored("Invalid input. Using default number of epochs (50).", YELLOW)
+            print_colored("Entrada inválida. Usando el número de épocas por defecto (50).", YELLOW)
     
     # Batch size
-    print_colored("Enter the batch size (default: 32):", GREEN)
+    print_colored("Introduce el tamaño del lote (batch size) (por defecto: 32):", GREEN)
     batch_size_input = input().strip()
     if batch_size_input:
         try:
@@ -564,12 +545,12 @@ def run_model_training(config, project_dir):
             if batch_size > 0:
                 command.extend(["--batch_size", str(batch_size)])
             else:
-                print_colored("Invalid batch size. Using default (32).", YELLOW)
+                print_colored("Tamaño de lote inválido. Usando el valor por defecto (32).", YELLOW)
         except ValueError:
-            print_colored("Invalid input. Using default batch size (32).", YELLOW)
+            print_colored("Entrada inválida. Usando el tamaño de lote por defecto (32).", YELLOW)
     
     # Validation split
-    print_colored("Enter the validation split ratio (0.0-1.0, default: 0.2):", GREEN)
+    print_colored("Introduce la proporción de división de validación (0.0-1.0, por defecto: 0.2):", GREEN)
     val_split_input = input().strip()
     if val_split_input:
         try:
@@ -577,13 +558,13 @@ def run_model_training(config, project_dir):
             if 0.0 < val_split < 1.0:
                 command.extend(["--validation_split", str(val_split)])
             else:
-                print_colored("Invalid validation split. Using default (0.2).", YELLOW)
+                print_colored("División de validación inválida. Usando el valor por defecto (0.2).", YELLOW)
         except ValueError:
-            print_colored("Invalid input. Using default validation split (0.2).", YELLOW)
+            print_colored("Entrada inválida. Usando la división de validación por defecto (0.2).", YELLOW)
     
     # Run the training command
-    print_colored("\nStarting model training...", GREEN)
-    print_colored(f"Command: {' '.join(command)}", YELLOW)
+    print_colored("\nIniciando entrenamiento del modelo...", GREEN)
+    print_colored(f"Comando: {' '.join(command)}", YELLOW)
     
     try:
         # Run the process
@@ -605,41 +586,25 @@ def run_model_training(config, project_dir):
         # Check for errors
         if process.returncode != 0:
             stderr = process.stderr.read()
-            print_colored("Error running train.py:", RED)
+            print_colored("Error al ejecutar train.py:", RED)
             print(stderr)
             print_colored(
-                "\ntrain.py failed to run. Check if all dependencies are installed.",
+                "\ntrain.py falló. Verifica que todas las dependencias estén instaladas.",
                 RED
             )
-            # Clean up temp directory
-            if os.path.exists(temp_train_dir):
-                shutil.rmtree(temp_train_dir)
             return False
         
-        print_colored("\nModel training completed successfully!", GREEN)
+        print_colored("\n¡Entrenamiento completado con éxito!", GREEN)
+        print_colored(f"El archivo .zip del modelo se ha guardado en: {output_dir}/{model_name}.zip", GREEN)
         
-        # Clean up temp directory
-        if os.path.exists(temp_train_dir):
-            shutil.rmtree(temp_train_dir)
-            
         return True
     
     except KeyboardInterrupt:
-        print_colored("\nTraining interrupted by user.", YELLOW)
-        
-        # Clean up temp directory
-        if os.path.exists(temp_train_dir):
-            shutil.rmtree(temp_train_dir)
-            
+        print_colored("\nEntrenamiento interrumpido por el usuario.", YELLOW)
         return False
         
     except Exception as e:
         print_colored(f"Error: {e}", RED)
-        
-        # Clean up temp directory
-        if os.path.exists(temp_train_dir):
-            shutil.rmtree(temp_train_dir)
-            
         return False
 
 
