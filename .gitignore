@@ -1,5 +1,7 @@
 **/images*/*
 !**/images*/.gitkeep
+**/temp*/*
+!**/temp*/.gitkeep
 
 
 # Byte-compiled / optimized / DLL files

@@ -158,6 +158,7 @@ def create_augmented_images(train_dir, augmented_dir, n_augmented=5):
                     os.path.join(aug_class_dir, img_file)
                 )
 
+
 def create_model(input_shape, num_classes):
     """Create a convolutional neural network model."""
     model = Sequential([
